@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="18"
+        android:translateY="18"
+        android:scaleX="0.14"
+        android:scaleY="0.14">
+        <!-- Comparison Horizontal Bars -->
+        <path
+            android:pathData="M140,180 h232"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="32"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M140,256 h160"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="32"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M140,332 h180"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="32"
+            android:strokeLineCap="round" />
+        <!-- Emerald Checkmark Badge -->
+        <path
+            android:pathData="M360,332m-36,0a36,36 0,1 1,72 0a36,36 0,1 1,-72 0"
+            android:fillColor="#10B981" />
+        <path
+            android:pathData="M348,332 l8,8 l16,-16"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="7"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>
