@@ -313,7 +313,7 @@ fun CompareScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
         // 1. COMPARE WORKSPACE Header & Action Buttons (Compare module.PNG)
         item {

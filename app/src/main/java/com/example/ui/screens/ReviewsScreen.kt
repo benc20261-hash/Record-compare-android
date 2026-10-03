@@ -150,8 +150,8 @@ fun ReviewsScreen(
             .fillMaxSize()
             .background(Color(0xFFF8FAFC)),
         contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // 1. Header: Community User Reviews (IMG_9631.PNG)
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -329,8 +329,8 @@ fun ReviewsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),

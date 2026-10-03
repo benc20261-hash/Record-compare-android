@@ -102,20 +102,18 @@ fun CatalogScreen(
             .fillMaxSize()
             .background(Color(0xFFF8FAFC))
     ) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = if (isGridView) 240.dp else 340.dp),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = 16.dp,
-                bottom = if (comparedIds.isNotEmpty()) 130.dp else 16.dp
-            ),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 10.dp,
+                    bottom = if (comparedIds.isNotEmpty()) 130.dp else 10.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-        // 1. Search Box (Catalog module.PNG)
-        item(span = { GridItemSpan(maxLineSpan) }) {
+            // 1. Search Box (Catalog module.PNG)
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchChange,
@@ -125,7 +123,7 @@ fun CatalogScreen(
                 placeholder = {
                     Text(
                         "Search products, brands, or specifica...",
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         color = Color(0xFF94A3B8)
                     )
                 },
@@ -134,7 +132,7 @@ fun CatalogScreen(
                         Icons.Default.Search,
                         contentDescription = "Search",
                         tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 },
                 trailingIcon = {
@@ -150,7 +148,7 @@ fun CatalogScreen(
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF4F46E5),
                     unfocusedBorderColor = Color(0xFFE2E8F0),
@@ -158,10 +156,8 @@ fun CatalogScreen(
                     unfocusedContainerColor = Color.White
                 )
             )
-        }
 
-        // 2. Actions Row: View Toggle, Smart Add Product, Add Product (Catalog module.PNG)
-        item(span = { GridItemSpan(maxLineSpan) }) {
+            // 2. Actions Row: View Toggle, Smart Add Product, Add Product
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -172,7 +168,7 @@ fun CatalogScreen(
                     shape = RoundedCornerShape(12.dp),
                     color = Color.White,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    modifier = Modifier.size(46.dp).clickable { isGridView = !isGridView }
+                    modifier = Modifier.size(44.dp).clickable { isGridView = !isGridView }
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Row(
@@ -195,14 +191,14 @@ fun CatalogScreen(
                     }
                 }
 
-                // Smart Add Product Button (Dark pill button with star icon)
+                // Smart Add Product Button
                 Button(
                     onClick = onNavigateToSmartAdd,
                     modifier = Modifier
                         .weight(1f)
-                        .height(46.dp)
+                        .height(44.dp)
                         .testTag("catalog_smart_add_btn"),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF0F172A),
                         contentColor = Color.White
@@ -213,25 +209,25 @@ fun CatalogScreen(
                         Icons.Default.AutoAwesome,
                         contentDescription = null,
                         tint = Color(0xFFFBBF24),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(
                         "Smart Add\nProduct",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        lineHeight = 14.sp
+                        lineHeight = 13.sp
                     )
                 }
 
-                // Add Product Button (Purple pill button with plus icon)
+                // Add Product Button
                 Button(
                     onClick = onNavigateToAddProduct,
                     modifier = Modifier
                         .weight(1f)
-                        .height(46.dp)
+                        .height(44.dp)
                         .testTag("catalog_add_product_btn"),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF4F46E5),
                         contentColor = Color.White
@@ -244,19 +240,17 @@ fun CatalogScreen(
                         tint = Color.White,
                         modifier = Modifier.size(16.dp)
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(
                         "Add\nProduct",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        lineHeight = 14.sp
+                        lineHeight = 13.sp
                     )
                 }
             }
-        }
 
-        // 2b. Filter products by tag / brand / product Card (Screenshot 1)
-        item(span = { GridItemSpan(maxLineSpan) }) {
+            // 3. Filter products by tag / brand / product Card
             TagBrandProductFilter(
                 label = "Filter products by tag / brand / product",
                 tags = allTags,
@@ -266,12 +260,46 @@ fun CatalogScreen(
                 onSelectTag = { tag ->
                     selectedTagOrBrand = if (tag.equals("All", ignoreCase = true)) "All" else tag
                 },
-                searchPlaceholder = "Search tags, brands, or products..."
+                searchPlaceholder = "Search tags, brands, or products...",
+                modifier = Modifier.fillMaxWidth().wrapContentHeight()
             )
-        }
 
-        // 3. Product Cards List (Catalog module.PNG & Catalog module 2.PNG)
-        items(filteredProducts, key = { it.id }) { product ->
+            // 4. Products List or Grid
+            if (filteredProducts.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SearchOff,
+                            contentDescription = null,
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Text(
+                            text = "No products matching \"${selectedTagOrBrand ?: searchQuery}\"",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = if (isGridView) 160.dp else 340.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(filteredProducts, key = { it.id }) { product ->
             val isCompared = product.id in comparedIds
             val prodSpecs = specifications.filter { it.productId == product.id || it.productTitle == product.name }
             val prodReviews = reviews.filter { product.id in it.productIds || product.name in it.productTitles }
@@ -529,19 +557,21 @@ fun CatalogScreen(
             }
         }
     }
-
-    if (comparedIds.isNotEmpty()) {
-        val comparedProducts = remember(comparedIds, products) {
-            products.filter { it.id in comparedIds }
-        }
-        ComparisonTray(
-            selectedProducts = comparedProducts,
-            onRemoveProduct = { onToggleCompare(it) },
-            onClearAll = onClearComparison,
-            onCompareNow = onNavigateToCompare,
-            onOpenSmartAdd = onNavigateToSmartAdd,
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
-    }
 }
+        }
+
+        if (comparedIds.isNotEmpty()) {
+            val comparedProducts = remember(comparedIds, products) {
+                products.filter { it.id in comparedIds }
+            }
+            ComparisonTray(
+                selectedProducts = comparedProducts,
+                onRemoveProduct = { onToggleCompare(it) },
+                onClearAll = onClearComparison,
+                onCompareNow = onNavigateToCompare,
+                onOpenSmartAdd = onNavigateToSmartAdd,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+    }
 }

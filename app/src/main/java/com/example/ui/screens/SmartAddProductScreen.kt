@@ -220,7 +220,7 @@ fun SmartAddProductScreen(
             .fillMaxSize()
             .background(Color(0xFFF8FAFC)),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // =================================================================
         // 1. SMART ADD & SPECIFICATION WORKSPACE HEADER (d8 in recordcompare-1.ai.studio)
@@ -311,21 +311,23 @@ fun SmartAddProductScreen(
                             Text("Add product slot", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-
-                    // Unified Filter Tag & Brand Pills Bar (Lu in recordcompare-1.ai.studio / Screenshot 4)
-                    TagBrandProductFilter(
-                        label = "Filter products by tag / brand / product",
-                        tags = allTags,
-                        brands = allBrands,
-                        products = allProductNames,
-                        selectedTag = selectedTagFilter,
-                        onSelectTag = { tag ->
-                            selectedTagFilter = tag
-                        },
-                        searchPlaceholder = "Search tags, brands, or products..."
-                    )
                 }
             }
+        }
+
+        // 1b. Unified Filter Tag & Brand Pills Bar (Lu in recordcompare-1.ai.studio / Screenshot 4)
+        item {
+            TagBrandProductFilter(
+                label = "Filter products by tag / brand / product",
+                tags = allTags,
+                brands = allBrands,
+                products = allProductNames,
+                selectedTag = selectedTagFilter,
+                onSelectTag = { tag ->
+                    selectedTagFilter = tag
+                },
+                searchPlaceholder = "Search tags, brands, or products..."
+            )
         }
 
         // =================================================================

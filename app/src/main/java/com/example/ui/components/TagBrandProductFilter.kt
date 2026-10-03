@@ -92,41 +92,44 @@ fun TagBrandProductFilter(
     }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth().wrapContentHeight()
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             // Header Row: Tag Icon + Title + Count + Search Bar
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().wrapContentHeight(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Sell,
                         contentDescription = null,
                         tint = Color(0xFF4F46E5),
-                        modifier = Modifier.size(15.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = label,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         color = Color(0xFF1E293B)
                     )
                     Text(
                         text = "(${allItems.size} total options)",
-                        fontSize = 11.sp,
+                        fontSize = 10.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF94A3B8)
                     )
@@ -134,32 +137,32 @@ fun TagBrandProductFilter(
 
                 // Compact Search Input
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(7.dp),
                     color = Color(0xFFF8FAFC),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
                     modifier = Modifier
-                        .widthIn(min = 140.dp, max = 180.dp)
-                        .height(32.dp)
+                        .widthIn(min = 110.dp, max = 150.dp)
+                        .height(26.dp)
                 ) {
                     Row(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 8.dp),
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = null,
                             tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                         androidx.compose.foundation.text.BasicTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
                             singleLine = true,
                             textStyle = androidx.compose.ui.text.TextStyle(
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 color = Color(0xFF0F172A)
                             ),
                             modifier = Modifier.weight(1f),
@@ -167,7 +170,7 @@ fun TagBrandProductFilter(
                                 if (searchQuery.isEmpty()) {
                                     Text(
                                         text = searchPlaceholder.take(20),
-                                        fontSize = 11.sp,
+                                        fontSize = 10.5.sp,
                                         color = Color(0xFF94A3B8),
                                         maxLines = 1
                                     )
@@ -181,7 +184,7 @@ fun TagBrandProductFilter(
                                 contentDescription = "Clear",
                                 tint = Color(0xFF64748B),
                                 modifier = Modifier
-                                    .size(12.dp)
+                                    .size(11.dp)
                                     .clickable { searchQuery = "" }
                             )
                         }
@@ -194,7 +197,7 @@ fun TagBrandProductFilter(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // All Category
@@ -245,13 +248,13 @@ fun TagBrandProductFilter(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(chipsScrollState),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 'All' Chip
                 val isAllSelected = selectedTag.equals("All", ignoreCase = true)
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(7.dp),
                     color = if (isAllSelected) Color(0xFF4F46E5) else Color(0xFFF1F5F9),
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
@@ -262,21 +265,21 @@ fun TagBrandProductFilter(
                         .testTag("tag_chip_all")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         if (isAllSelected) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(12.dp)
+                                modifier = Modifier.size(11.dp)
                             )
                         }
                         Text(
                             text = "All",
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium,
                             color = if (isAllSelected) Color.White else Color(0xFF334155)
                         )
@@ -293,7 +296,7 @@ fun TagBrandProductFilter(
                     }
 
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(7.dp),
                         color = if (isSelected) Color(0xFF4F46E5) else Color(0xFFF8FAFC),
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
@@ -310,16 +313,16 @@ fun TagBrandProductFilter(
                             .testTag("tag_chip_${item.label}")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
                             if (isSelected) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(11.dp)
+                                    modifier = Modifier.size(10.dp)
                                 )
                             } else {
                                 Icon(
@@ -330,12 +333,12 @@ fun TagBrandProductFilter(
                                         FilterOptionType.BRAND -> Color(0xFFF59E0B)
                                         FilterOptionType.PRODUCT -> Color(0xFF60A5FA)
                                     },
-                                    modifier = Modifier.size(11.dp)
+                                    modifier = Modifier.size(10.dp)
                                 )
                             }
                             Text(
                                 text = item.label,
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) Color.White else Color(0xFF334155)
                             )
@@ -357,32 +360,32 @@ private fun CategoryTabPill(
     onClick: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(7.dp),
         color = if (isSelected) selectedBgColor else Color(0xFFF1F5F9),
         modifier = Modifier
             .clickable(onClick = onClick)
-            .height(28.dp)
+            .height(24.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp),
+            modifier = Modifier.padding(horizontal = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = if (isSelected) Color.White else Color(0xFF64748B),
-                modifier = Modifier.size(11.dp)
+                modifier = Modifier.size(10.dp)
             )
             Text(
                 text = label,
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                 color = if (isSelected) Color.White else Color(0xFF475569)
             )
             Text(
                 text = "($count)",
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 color = if (isSelected) Color.White.copy(alpha = 0.85f) else Color(0xFF94A3B8)
             )
         }
