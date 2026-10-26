@@ -23,7 +23,8 @@ data class SpecificationEntity(
     val details: String,
     val unit: String? = null,
     val orderIndex: Int = 0,
-    val picturesJson: String = "[]"
+    val picturesJson: String = "[]",
+    val isNumeric: Boolean? = null
 )
 
 @Entity(tableName = "reviews")

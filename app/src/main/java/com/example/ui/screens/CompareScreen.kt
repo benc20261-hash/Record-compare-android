@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.*
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -29,13 +31,23 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
+import com.example.model.PictureItem
 import com.example.model.ProductItem
 import com.example.model.ReviewItem
 import com.example.model.SpecificationItem
 import com.example.model.resolveImageModel
+import com.example.ui.components.ButtonText
+import com.example.ui.components.DeleteConfirmDialog
 import com.example.ui.components.DeviceGraphicPlaceholder
+import com.example.ui.components.FormattedSpecHtml
+import com.example.ui.components.FullScreenPhotoLightbox
+import com.example.ui.components.SpecUnitBadge
 import com.example.ui.components.TagBrandProductFilter
+import com.example.util.computeHierarchicalSpecOrder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,9 +100,13 @@ fun CompareScreen(
     // Slot picker dialog state
     var slotIndexToPick by remember { mutableStateOf<Int?>(null) }
     var fullScreenPictureUrl by remember { mutableStateOf<String?>(null) }
+    var showClearAllConfirm by remember { mutableStateOf(false) }
+    var slotToRemoveIndex by remember { mutableStateOf<Int?>(null) }
 
     // Higher / Lower sorting preferences per spec (defaults to "higher")
     val specSortModes = remember { mutableStateMapOf<String, String>() }
+    // User manual overrides for numeric (#) vs text (Aa) per spec
+    val specNumericOverrides = remember { mutableStateMapOf<String, Boolean?>() }
 
     val tagList = remember(allProducts) {
         val set = linkedSetOf<String>()
@@ -149,170 +165,234 @@ fun CompareScreen(
         specifications.filter { it.productId in activeIds || it.productTitle in activeTitles }
     }
 
-    val distinctSpecNames = remember(activeSpecs) {
-        activeSpecs.map { it.specName }.distinct()
+    val distinctSpecNames = remember(activeProducts, specifications) {
+        computeHierarchicalSpecOrder(activeProducts, specifications)
     }
 
-    // Full Screen Picture Dialog
+    // Full Screen Picture Lightbox
     if (fullScreenPictureUrl != null) {
-        Dialog(onDismissRequest = { fullScreenPictureUrl = null }) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color.Black.copy(alpha = 0.95f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(450.dp)
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    val context = LocalContext.current
-                    AsyncImage(
-                        model = resolveImageModel(context, fullScreenPictureUrl ?: ""),
-                        contentDescription = "Full picture",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                    )
-                    IconButton(
-                        onClick = { fullScreenPictureUrl = null },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                    }
-                }
-            }
-        }
+        FullScreenPhotoLightbox(
+            images = listOf(PictureItem(id = "compare_pic", name = "Photo", url = fullScreenPictureUrl!!)),
+            initialIndex = 0,
+            onDismiss = { fullScreenPictureUrl = null }
+        )
     }
 
-    // Slot Record Picker Dialog
+    // Slot Record Picker Screen (Full Screen with Back Button)
     if (slotIndexToPick != null) {
         val slotIndex = slotIndexToPick!!
-        Dialog(onDismissRequest = { slotIndexToPick = null }) {
+        BackHandler { slotIndexToPick = null }
+        Dialog(
+            onDismissRequest = { slotIndexToPick = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color.White,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 560.dp)
+                modifier = Modifier.fillMaxSize(),
+                color = Color(0xFFF8FAFC)
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Select Record for Slot ${slotIndex + 1}",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = Color(0xFF0F172A)
-                        )
-                        IconButton(onClick = { slotIndexToPick = null }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF64748B))
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = filterSearchQuery,
-                        onValueChange = { filterSearchQuery = it },
-                        placeholder = { Text("Search by name, tag, or brand...") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                        trailingIcon = {
-                            if (filterSearchQuery.isNotEmpty()) {
-                                IconButton(onClick = { filterSearchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8))
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(dialogFilteredProducts) { prod ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color.White,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                Scaffold(
+                    contentWindowInsets = WindowInsets.systemBars,
+                    topBar = {
+                        Surface(
+                            color = Color.White,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        val updated = recordSlots.toMutableList()
-                                        while (slotIndex >= updated.size) {
-                                            updated.add(null)
-                                        }
-                                        updated[slotIndex] = prod.id
-                                        recordSlots = updated
-                                        onSetComparedIds(updated.filterNotNull())
-                                        slotIndexToPick = null
-                                    }
+                                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                IconButton(
+                                    onClick = { slotIndexToPick = null },
+                                    modifier = Modifier.testTag("slot_picker_back_btn")
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = Color(0xFFF1F5F9),
-                                        modifier = Modifier.size(40.dp)
-                                    ) {
-                                        DeviceGraphicPlaceholder(
-                                            title = prod.name,
-                                            brand = prod.brand,
-                                            tags = prod.tags,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = prod.name,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = Color(0xFF0F172A)
-                                        )
-                                        Text(
-                                            text = prod.brand,
-                                            fontSize = 12.sp,
-                                            color = Color(0xFF64748B)
-                                        )
-                                    }
-
                                     Icon(
-                                        Icons.AutoMirrored.Filled.ArrowForward,
-                                        contentDescription = null,
-                                        tint = Color(0xFF4F46E5),
-                                        modifier = Modifier.size(16.dp)
+                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = Color(0xFF0F172A)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Select Record for Slot ${slotIndex + 1}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Text(
+                                        text = "Choose a product to populate comparison column",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF64748B)
                                     )
                                 }
                             }
                         }
                     }
+                ) { innerPadding ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = filterSearchQuery,
+                            onValueChange = { filterSearchQuery = it },
+                            placeholder = { Text("Search by name, tag, or brand...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                            trailingIcon = {
+                                if (filterSearchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { filterSearchQuery = "" }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8))
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("slot_picker_search_input"),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(dialogFilteredProducts) { prod ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color.White,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val updated = recordSlots.toMutableList()
+                                            while (slotIndex >= updated.size) {
+                                                updated.add(null)
+                                            }
+                                            updated[slotIndex] = prod.id
+                                            recordSlots = updated
+                                            onSetComparedIds(updated.filterNotNull())
+                                            slotIndexToPick = null
+                                        }
+                                        .testTag("slot_pick_item_${prod.id}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = Color(0xFFF1F5F9),
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            DeviceGraphicPlaceholder(
+                                                title = prod.name,
+                                                brand = prod.brand,
+                                                tags = prod.tags,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = prod.name,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp,
+                                                color = Color(0xFF0F172A)
+                                            )
+                                            Text(
+                                                text = "${prod.brand} • ${prod.tags.joinToString(", ")}",
+                                                fontSize = 12.sp,
+                                                color = Color(0xFF64748B)
+                                            )
+                                        }
+
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = null,
+                                            tint = Color(0xFF4F46E5),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
+    // Confirmation dialog: Clear all comparison slots
+    if (showClearAllConfirm) {
+        val activeProducts = recordSlots.filterNotNull().mapNotNull { id -> allProducts.find { it.id == id } }
+        val message = if (activeProducts.isNotEmpty()) {
+            val namesStr = activeProducts.joinToString(", ") { "\"${it.name}\"" }
+            "Are you sure you want to clear ${activeProducts.size} product${if (activeProducts.size > 1) "s" else ""} ($namesStr) from the comparison?"
+        } else {
+            "Are you sure you want to reset all comparison slots?"
+        }
+        DeleteConfirmDialog(
+            title = "Clear Comparison?",
+            message = message,
+            confirmText = "Clear all",
+            testTagPrefix = "compare_clear_all",
+            onConfirm = {
+                recordSlots = mutableListOf<String?>(null, null)
+                onSetComparedIds(emptyList())
+                showClearAllConfirm = false
+            },
+            onDismiss = { showClearAllConfirm = false }
+        )
+    }
+
+    // Confirmation dialog: Remove individual slot
+    if (slotToRemoveIndex != null) {
+        val index = slotToRemoveIndex!!
+        val slotProdId = recordSlots.getOrNull(index)
+        val slotProd = slotProdId?.let { id -> allProducts.find { it.id == id } }
+        val title = if (slotProd != null) "Remove from Comparison?" else "Remove Comparison Slot?"
+        val message = if (slotProd != null) {
+            "Are you sure you want to remove \"${slotProd.name}\" from Slot ${index + 1}?"
+        } else {
+            "Are you sure you want to remove comparison Slot ${index + 1}?"
+        }
+        DeleteConfirmDialog(
+            title = title,
+            message = message,
+            confirmText = "Remove",
+            testTagPrefix = "compare_remove_slot",
+            onConfirm = {
+                val updated = recordSlots.toMutableList()
+                if (index in updated.indices) {
+                    if (updated.size > 2) {
+                        updated.removeAt(index)
+                    } else {
+                        updated[index] = null
+                    }
+                    recordSlots = updated
+                    onSetComparedIds(updated.filterNotNull())
+                }
+                slotToRemoveIndex = null
+            },
+            onDismiss = { slotToRemoveIndex = null }
+        )
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFF8FAFC))
+            .background(com.example.ui.theme.AppColors.CanvasBackground)
     ) {
         val isLaptop = maxWidth >= 840.dp
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = com.example.ui.theme.AppSpacing.ScreenContentPaddingScrollable,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
         // 1. COMPARE WORKSPACE Header & Action Buttons (Compare module.PNG)
@@ -356,28 +436,26 @@ fun CompareScreen(
                         enabled = recordSlots.size < 5,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
                         shape = RoundedCornerShape(20.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("compare_add_record_btn")
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.testTag("compare_add_record_btn").height(38.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Add record", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        ButtonText("Add record", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
 
                     if (recordSlots.any { it != null }) {
                         OutlinedButton(
-                            onClick = {
-                                recordSlots = mutableListOf<String?>(null, null)
-                                onSetComparedIds(emptyList())
-                            },
+                            onClick = { showClearAllConfirm = true },
                             shape = RoundedCornerShape(20.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF64748B)),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            modifier = Modifier.height(38.dp)
                         ) {
                             Icon(Icons.Default.ClearAll, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Clear all", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            ButtonText("Clear all", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
                         }
                     }
                 }
@@ -399,7 +477,7 @@ fun CompareScreen(
             )
         }
 
-        // 3. Record Slots Cards (RECORD 1, RECORD 2... Screenshot 1.png)
+        // 3. Record Slots Cards (RECORD 1, RECORD 2... Screenshot 1.png & IMG_0002)
         if (isLaptop) {
             item {
                 Row(
@@ -409,21 +487,15 @@ fun CompareScreen(
                     recordSlots.indices.forEach { index ->
                         val slotProdId = recordSlots[index]
                         val slotProd = slotProdId?.let { id -> allProducts.find { it.id == id } }
+                        val revCount = reviews.count { slotProd?.id in it.productIds || (slotProd != null && it.productTitles.any { t -> t.equals(slotProd.name, ignoreCase = true) }) }
                         RecordSlotCardView(
                             index = index,
                             slotProd = slotProd,
                             recordSlotsCount = recordSlots.size,
+                            reviewsCount = revCount,
                             onSelectSlot = { slotIndexToPick = index },
-                            onRemoveSlot = {
-                                val updated = recordSlots.toMutableList()
-                                if (updated.size > 2) {
-                                    updated.removeAt(index)
-                                } else {
-                                    updated[index] = null
-                                }
-                                recordSlots = updated
-                                onSetComparedIds(updated.filterNotNull())
-                            },
+                            onRemoveSlot = { slotToRemoveIndex = index },
+                            onEditProduct = onEditProduct,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -433,21 +505,15 @@ fun CompareScreen(
             items(recordSlots.indices.toList()) { index ->
                 val slotProdId = recordSlots[index]
                 val slotProd = slotProdId?.let { id -> allProducts.find { it.id == id } }
+                val revCount = reviews.count { slotProd?.id in it.productIds || (slotProd != null && it.productTitles.any { t -> t.equals(slotProd.name, ignoreCase = true) }) }
                 RecordSlotCardView(
                     index = index,
                     slotProd = slotProd,
                     recordSlotsCount = recordSlots.size,
+                    reviewsCount = revCount,
                     onSelectSlot = { slotIndexToPick = index },
-                    onRemoveSlot = {
-                        val updated = recordSlots.toMutableList()
-                        if (updated.size > 2) {
-                            updated.removeAt(index)
-                        } else {
-                            updated[index] = null
-                        }
-                        recordSlots = updated
-                        onSetComparedIds(updated.filterNotNull())
-                    }
+                    onRemoveSlot = { slotToRemoveIndex = index },
+                    onEditProduct = onEditProduct
                 )
             }
         }
@@ -456,6 +522,17 @@ fun CompareScreen(
         // 4. SIDE BY SIDE COMPARISON SECTION (Shown when 2+ products chosen)
         // =================================================================
         if (activeProducts.size >= 2) {
+            val isBrandDiff = activeProducts.map { it.brand.trim().lowercase() }.distinct().size > 1
+            val isTagsDiff = activeProducts.map { it.tags.sorted().joinToString(",").lowercase() }.distinct().size > 1
+            val diffSpecsCount = distinctSpecNames.count { specName ->
+                val vals = activeProducts.map { p ->
+                    activeSpecs.find { (it.productId == p.id || it.productTitle == p.name) && it.specName.equals(specName, ignoreCase = true) }?.details.orEmpty().trim().lowercase()
+                }.distinct()
+                vals.size > 1
+            }
+            val totalDifferCount = (if (isBrandDiff) 1 else 0) + (if (isTagsDiff) 1 else 0) + diffSpecsCount
+            val totalFieldsCount = 2 + distinctSpecNames.size
+
             item {
                 Spacer(Modifier.height(8.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -473,14 +550,18 @@ fun CompareScreen(
                         color = Color(0xFF0F172A)
                     )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFEEF2FF)
+                            color = Color(0xFFF1F5F9),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
                         ) {
                             Text(
-                                text = "${activeProducts.size} compared",
-                                color = Color(0xFF4338CA),
+                                text = "${activeProducts.size} selected",
+                                color = Color(0xFF0F172A),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -489,10 +570,11 @@ fun CompareScreen(
 
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFFEF3C7)
+                            color = Color(0xFFFEF3C7),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE047))
                         ) {
                             Text(
-                                text = "${distinctSpecNames.size} specifications",
+                                text = "$totalDifferCount differences",
                                 color = Color(0xFFB45309),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -500,100 +582,16 @@ fun CompareScreen(
                             )
                         }
                     }
+
+                    Text(
+                        text = "$totalFieldsCount fields shown, $totalDifferCount differ",
+                        fontSize = 13.sp,
+                        color = Color(0xFF64748B)
+                    )
                 }
             }
 
-            // Product Cards in Horizontal Scroll
-            item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(activeProducts) { prod ->
-                        val prodReviews = reviews.filter { prod.id in it.productIds || prod.name in it.productTitles }
-                        val firstPic = prod.pictures.firstOrNull()?.url
-
-                        Card(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                            modifier = Modifier.width(260.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = Color(0xFFF8FAFC),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(130.dp)
-                                ) {
-                                    if (!firstPic.isNullOrBlank()) {
-                                        val context = LocalContext.current
-                                        AsyncImage(
-                                            model = resolveImageModel(context, firstPic),
-                                            contentDescription = prod.name,
-                                            contentScale = ContentScale.Fit,
-                                            modifier = Modifier.fillMaxSize().padding(8.dp)
-                                        )
-                                    } else {
-                                        DeviceGraphicPlaceholder(
-                                            title = prod.name,
-                                            brand = prod.brand,
-                                            tags = prod.tags,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                }
-
-                                Text(
-                                    text = prod.name,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    color = Color(0xFF0F172A),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-
-                                Text(
-                                    text = prod.brand,
-                                    fontSize = 13.sp,
-                                    color = Color(0xFF64748B)
-                                )
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    OutlinedButton(
-                                        onClick = { onEditProduct(prod) },
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f),
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                                    ) {
-                                        Text("Edit", fontSize = 11.sp)
-                                    }
-
-                                    Button(
-                                        onClick = { onProductClick(prod) },
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.weight(1f),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A)),
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                                    ) {
-                                        Text("Details", fontSize = 11.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Brand Comparison Card
-            val isBrandDiff = activeProducts.map { it.brand.trim().lowercase() }.distinct().size > 1
+            // Brand Comparison Card (IMG_0002)
             item {
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -612,35 +610,49 @@ fun CompareScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Brand", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Sell, contentDescription = null, tint = Color(0xFF4F46E5), modifier = Modifier.size(16.dp))
+                                Text("Brand", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                            }
                             if (isBrandDiff) {
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
-                                    color = Color(0xFFFEF3C7)
+                                    color = Color(0xFFFEF3C7),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE047))
                                 ) {
-                                    Text("DIFFERENT", color = Color(0xFFB45309), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    Text("Different", color = Color(0xFFB45309), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                                 }
                             }
                         }
 
                         Divider(color = if (isBrandDiff) Color(0xFFFEF08A) else Color(0xFFF1F5F9))
 
-                        activeProducts.forEach { p ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(p.name, fontSize = 13.sp, color = Color(0xFF64748B))
-                                Text(p.brand, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                        activeProducts.forEachIndexed { idx, p ->
+                            if (idx > 0) Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = p.name.uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF64748B),
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = p.brand,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0F172A)
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // Tags Comparison Card
-            val isTagsDiff = activeProducts.map { it.tags.sorted().joinToString(",") }.distinct().size > 1
+            // Tags Comparison Card (IMG_0002)
             item {
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -659,34 +671,65 @@ fun CompareScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Tags", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Sell, contentDescription = null, tint = Color(0xFF6366F1), modifier = Modifier.size(16.dp))
+                                Text("Tags", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                            }
                             if (isTagsDiff) {
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
-                                    color = Color(0xFFFEF3C7)
+                                    color = Color(0xFFFEF3C7),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE047))
                                 ) {
-                                    Text("DIFFERENT", color = Color(0xFFB45309), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    Text(
+                                        "DIFFERENT",
+                                        color = Color(0xFFB45309),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
                                 }
                             }
                         }
                         Divider(color = if (isTagsDiff) Color(0xFFFEF08A) else Color(0xFFF1F5F9))
 
-                        activeProducts.forEach { p ->
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(p.name, fontSize = 12.sp, color = Color(0xFF64748B))
+                        activeProducts.forEachIndexed { idx, p ->
+                            if (idx > 0) Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    text = p.name.uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF64748B),
+                                    letterSpacing = 0.5.sp
+                                )
                                 Row(
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     if (p.tags.isEmpty()) {
-                                        Text("No tags", fontSize = 12.sp, color = Color(0xFF94A3B8))
+                                        Text("No tags", fontSize = 12.sp, color = Color(0xFF94A3B8), maxLines = 1, softWrap = false)
                                     } else {
                                         p.tags.forEach { tag ->
                                             Surface(
                                                 shape = RoundedCornerShape(6.dp),
                                                 color = Color(0xFFF1F5F9)
                                             ) {
-                                                Text(tag, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), color = Color(0xFF334155))
+                                                Text(
+                                                    tag,
+                                                    fontSize = 11.sp,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    color = Color(0xFF334155),
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
                                             }
                                         }
                                     }
@@ -697,12 +740,15 @@ fun CompareScreen(
                 }
             }
 
-            // User Reviews Comparison Card (Matching screenshot & ComparisonMatrix.tsx)
+            // User Reviews Comparison Card (IMG_0003)
+            val isReviewsDiff = activeProducts.map { p ->
+                reviews.count { p.id in it.productIds || it.productTitles.any { t -> t.equals(p.name, ignoreCase = true) } }
+            }.distinct().size > 1
             item {
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    colors = CardDefaults.cardColors(containerColor = if (isReviewsDiff) Color(0xFFFEFCE8) else Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isReviewsDiff) Color(0xFFFDE047) else Color(0xFFE2E8F0)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -716,80 +762,119 @@ fun CompareScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.RateReview,
+                                    Icons.Default.ChatBubbleOutline,
                                     contentDescription = null,
                                     tint = Color(0xFF4F46E5),
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Text("User Reviews", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                                Text("User reviews", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                            }
+
+                            if (isReviewsDiff) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFEF3C7),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE047))
+                                ) {
+                                    Text(
+                                        "Different",
+                                        color = Color(0xFFB45309),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
                             }
                         }
 
-                        Divider(color = Color(0xFFF1F5F9))
+                        Divider(color = if (isReviewsDiff) Color(0xFFFEF08A) else Color(0xFFF1F5F9))
 
-                        activeProducts.forEach { p ->
+                        activeProducts.forEachIndexed { idx, p ->
+                            if (idx > 0) Spacer(Modifier.height(10.dp))
                             val linkedReviews = reviews.filter { r ->
                                 p.id in r.productIds ||
                                         r.productTitles.any { it.equals(p.name, ignoreCase = true) }
                             }
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        p.name,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF0F172A)
-                                    )
-                                    Text(
-                                        text = if (linkedReviews.isNotEmpty()) {
-                                            "${linkedReviews.size} review${if (linkedReviews.size == 1) "" else "s"} available"
-                                        } else {
-                                            "No reviews yet"
-                                        },
-                                        fontSize = 12.sp,
-                                        color = if (linkedReviews.isNotEmpty()) Color(0xFF059669) else Color(0xFF94A3B8)
-                                    )
-                                }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = p.name.uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF64748B),
+                                    letterSpacing = 0.5.sp
+                                )
 
-                                if (linkedReviews.isNotEmpty()) {
-                                    Button(
-                                        onClick = { onReviewClick(linkedReviews.first()) },
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF4F46E5)
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                        modifier = Modifier.height(34.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.MenuBook,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (linkedReviews.isNotEmpty()) {
+                                        Text(
+                                            text = "${linkedReviews.size} review${if (linkedReviews.size == 1) "" else "s"} available",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF0F172A)
                                         )
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Read review", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = { onOpenAddReview(p) },
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                        modifier = Modifier.height(34.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Add,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp)
+
+                                        OutlinedButton(
+                                            onClick = { onReviewClick(linkedReviews.first()) },
+                                            shape = RoundedCornerShape(20.dp),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(34.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.ChatBubbleOutline,
+                                                contentDescription = null,
+                                                tint = Color(0xFF4F46E5),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                "Read review",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFF0F172A)
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "No linked reviews",
+                                            fontSize = 13.sp,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                            color = Color(0xFF94A3B8)
                                         )
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Write", fontSize = 11.sp)
+
+                                        // Dashed border style for Write review
+                                        Surface(
+                                            shape = RoundedCornerShape(20.dp),
+                                            color = Color(0xFFEEF2FF).copy(alpha = 0.6f),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF818CF8)),
+                                            modifier = Modifier
+                                                .height(34.dp)
+                                                .clickable { onOpenAddReview(p) }
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Add,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF4F46E5),
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                                Text(
+                                                    "Write review",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color(0xFF4F46E5)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -807,23 +892,41 @@ fun CompareScreen(
                 val distinctValues = values.map { (it?.details ?: "").trim().lowercase() }.distinct()
                 val isSpecDiff = distinctValues.size > 1
 
-                val parsedList = remember(values, specName) {
+                val rowOverride = specNumericOverrides[specName]
+
+                val parsedList = remember(values, specName, rowOverride) {
                     values.map { s ->
-                        parseNumericSpec(s?.details, s?.unit, specName)
+                        parseNumericSpec(
+                            details = s?.details,
+                            specUnit = s?.unit,
+                            specName = specName,
+                            isNumeric = rowOverride ?: s?.isNumeric
+                        )
                     }
                 }
 
-                val hasAnyNumeric = remember(parsedList) {
-                    parsedList.any { it.hasNumeric }
+                val isNumericSpec = remember(parsedList, values, rowOverride) {
+                    when {
+                        rowOverride != null -> rowOverride
+                        values.any { it?.isNumeric == true } -> true
+                        values.any { it?.isNumeric == false } && values.none { it?.isNumeric == true } -> false
+                        else -> {
+                            val numericCount = parsedList.count { it.hasNumeric && !it.rawText.contains('\n') && it.rawText.length <= 45 }
+                            numericCount >= 2
+                        }
+                    }
                 }
 
-                val commonUnit = remember(parsedList, values) {
+                val hasAnyNumeric = isNumericSpec && parsedList.any { it.hasNumeric }
+
+                val detectedUnit = remember(parsedList, values, specName) {
                     parsedList.firstOrNull { it.displayUnit.isNotBlank() }?.displayUnit
-                        ?: values.firstOrNull { !it?.unit.isNullOrBlank() }?.unit.orEmpty()
+                        ?: values.firstOrNull { !it?.unit.isNullOrBlank() }?.unit
+                        ?: specifications.find { it.specName.equals(specName, ignoreCase = true) && !it.unit.isNullOrBlank() }?.unit.orEmpty()
                 }
 
                 val specKey = specName.trim().lowercase()
-                val currentMode = specSortModes[specKey] ?: "higher"
+                val currentMode = getSpecBestValueMode(specName, detectedUnit, specSortModes)
                 val numericItems = parsedList.filter { it.hasNumeric }
                 val maxNumeric = remember(numericItems) {
                     if (numericItems.isNotEmpty()) numericItems.maxOf { it.value } else 1f
@@ -846,110 +949,150 @@ fun CompareScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // Card Header
+                        // Card Header Row: Spec Name, Icon, Unit, Number Toggle, and DIFFERENT badge (IMG_0003)
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Left: Bar chart icon + Title + Unit
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                if (hasAnyNumeric) {
-                                    Icon(
-                                        Icons.Default.BarChart,
-                                        contentDescription = null,
-                                        tint = Color(0xFF6366F1),
-                                        modifier = Modifier.size(18.dp)
+                            Icon(
+                                if (hasAnyNumeric) Icons.Default.BarChart else Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = if (hasAnyNumeric) Color(0xFF6366F1) else Color(0xFF4F46E5),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = specName,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF0F172A),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+
+                            if (detectedUnit.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFF1F5F9),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+                                ) {
+                                    Text(
+                                        text = detectedUnit,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = Color(0xFF334155),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
-                                Text(
-                                    text = specName,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF0F172A)
-                                )
-                                if (commonUnit.isNotBlank()) {
-                                    Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = Color(0xFFE2E8F0).copy(alpha = 0.8f)
-                                    ) {
-                                        Text(
-                                            text = commonUnit,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF475569),
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
+                            }
+
+                            // Interactive Number ON/OFF Pill Toggle (IMG_0003)
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFFF1F5F9),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                modifier = Modifier
+                                    .clickable {
+                                        specNumericOverrides[specName] = when (rowOverride) {
+                                            null -> if (isNumericSpec) false else true
+                                            true -> false
+                                            false -> true
+                                        }
+                                    }
+                                    .testTag("spec_override_${specName.replace(" ", "_")}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    if (isNumericSpec) {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = Color(0xFF4F46E5),
+                                            modifier = Modifier.size(18.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text("#", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                        Text("Number ON", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4F46E5))
+                                        Text("⇄ Text", fontSize = 9.sp, color = Color(0xFF64748B))
+                                    } else {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text("Aa", color = Color(0xFF334155), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                        Text("Number OFF", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+                                        Text("⇄ Number", fontSize = 9.sp, color = Color(0xFF64748B))
                                     }
                                 }
                             }
 
-                            // Right: DIFFERENT badge + Higher/Lower Toggle
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                if (isSpecDiff) {
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = Color(0xFFFACC15),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEAB308))
-                                    ) {
-                                        Text(
-                                            text = "DIFFERENT",
-                                            color = Color(0xFF451A03),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Black,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                        )
-                                    }
+                            // DIFFERENT Badge (IMG_0003)
+                            if (isSpecDiff) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFACC15),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEAB308))
+                                ) {
+                                    Text(
+                                        text = "DIFFERENT",
+                                        color = Color(0xFF451A03),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
                                 }
+                            }
 
-                                if (hasAnyNumeric) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = Color(0xFFF1F5F9),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
+                            // Higher / Lower segment toggle (IMG_0003)
+                            if (hasAnyNumeric) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFF1F5F9),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(2.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(2.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (currentMode == "higher") Color.White else Color.Transparent,
+                                            shadowElevation = if (currentMode == "higher") 1.dp else 0.dp,
+                                            modifier = Modifier.clickable { specSortModes[specKey] = "higher" }
                                         ) {
-                                            // Higher Button
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = if (currentMode == "higher") Color.White else Color.Transparent,
-                                                shadowElevation = if (currentMode == "higher") 1.dp else 0.dp,
-                                                modifier = Modifier.clickable { specSortModes[specKey] = "higher" }
-                                            ) {
-                                                Text(
-                                                    text = "Higher",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = if (currentMode == "higher") FontWeight.Bold else FontWeight.Medium,
-                                                    color = if (currentMode == "higher") Color(0xFF0F172A) else Color(0xFF64748B),
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                                )
-                                            }
-
-                                            // Lower Button
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = if (currentMode == "lower") Color.White else Color.Transparent,
-                                                shadowElevation = if (currentMode == "lower") 1.dp else 0.dp,
-                                                modifier = Modifier.clickable { specSortModes[specKey] = "lower" }
-                                            ) {
-                                                Text(
-                                                    text = "Lower",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = if (currentMode == "lower") FontWeight.Bold else FontWeight.Medium,
-                                                    color = if (currentMode == "lower") Color(0xFF0F172A) else Color(0xFF64748B),
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                                )
-                                            }
+                                            Text(
+                                                text = "Higher",
+                                                fontSize = 10.sp,
+                                                fontWeight = if (currentMode == "higher") FontWeight.Bold else FontWeight.Medium,
+                                                color = if (currentMode == "higher") Color(0xFF0F172A) else Color(0xFF64748B),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (currentMode == "lower") Color.White else Color.Transparent,
+                                            shadowElevation = if (currentMode == "lower") 1.dp else 0.dp,
+                                            modifier = Modifier.clickable { specSortModes[specKey] = "lower" }
+                                        ) {
+                                            Text(
+                                                text = "Lower",
+                                                fontSize = 10.sp,
+                                                fontWeight = if (currentMode == "lower") FontWeight.Bold else FontWeight.Medium,
+                                                color = if (currentMode == "lower") Color(0xFF0F172A) else Color(0xFF64748B),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
                                         }
                                     }
                                 }
@@ -958,8 +1101,9 @@ fun CompareScreen(
 
                         Divider(color = if (isSpecDiff) Color(0xFFFEF08A) else Color(0xFFF1F5F9))
 
-                        // Product Rows inside Card
+                        // Product Rows stacked vertically inside Card (IMG_0003)
                         activeProducts.forEachIndexed { i, p ->
+                            if (i > 0) Divider(color = if (isSpecDiff) Color(0xFFFEF08A).copy(alpha = 0.7f) else Color(0xFFF1F5F9), modifier = Modifier.padding(vertical = 6.dp))
                             val s = values[i]
                             val parsed = parsedList[i]
                             val isBest = parsed.hasNumeric && parsed.value == bestNumeric && numericItems.size > 1
@@ -967,7 +1111,7 @@ fun CompareScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
+                                    .padding(vertical = 2.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Row(
@@ -976,58 +1120,60 @@ fun CompareScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = p.name,
-                                        fontSize = 13.sp,
-                                        color = Color(0xFF0F172A),
-                                        fontWeight = FontWeight.SemiBold
+                                        text = p.name.uppercase(),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF64748B),
+                                        letterSpacing = 0.5.sp
                                     )
 
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        if (isBest) {
-                                            Surface(
-                                                shape = RoundedCornerShape(4.dp),
-                                                color = Color(0xFFECFDF5),
-                                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
-                                            ) {
-                                                Text(
-                                                    text = "🏆 Best",
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFF047857),
-                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                )
-                                            }
+                                    if (isBest) {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = Color(0xFFECFDF5),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
+                                        ) {
+                                            Text(
+                                                text = "🏆 Best",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF047857),
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
                                         }
-
-                                        Text(
-                                            text = if (parsed.hasNumeric) {
-                                                val displayNum = if (parsed.value % 1f == 0f) parsed.value.toLong().toString() else parsed.value.toString()
-                                                if (parsed.displayUnit.isNotBlank()) "$displayNum ${parsed.displayUnit}" else displayNum
-                                            } else if (parsed.rawText.isNotBlank()) {
-                                                parsed.rawText
-                                            } else {
-                                                "—"
-                                            },
-                                            fontSize = 13.sp,
-                                            fontWeight = if (isBest) FontWeight.Bold else FontWeight.SemiBold,
-                                            color = if (isBest) Color(0xFF0F172A) else if (parsed.hasNumeric || parsed.rawText.isNotBlank()) Color(0xFF334155) else Color(0xFF94A3B8)
-                                        )
                                     }
                                 }
 
-                                // Comparative Progress Bar with empty track fallback
-                                if (hasAnyNumeric) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(8.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(Color(0xFFE2E8F0).copy(alpha = 0.7f))
+                                // Spec Value Rendering (Vertical as IMG_0003)
+                                if (parsed.hasNumeric && isNumericSpec) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (parsed.hasNumeric && maxNumeric > 0f) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            val displayNum = if (parsed.value % 1f == 0f) parsed.value.toLong().toString() else parsed.value.toString()
+                                            Text(
+                                                text = if (parsed.displayUnit.isNotBlank()) "$displayNum ${parsed.displayUnit}" else displayNum,
+                                                fontSize = 15.sp,
+                                                fontWeight = if (isBest) FontWeight.Bold else FontWeight.SemiBold,
+                                                color = if (isBest) Color(0xFF0F172A) else Color(0xFF334155)
+                                            )
+                                        }
+                                    }
+
+                                    // Comparative Progress Bar
+                                    if (maxNumeric > 0f) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(8.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFFE2E8F0).copy(alpha = 0.7f))
+                                        ) {
                                             val ratio = (parsed.value / maxNumeric).coerceIn(0.04f, 1f)
                                             Box(
                                                 modifier = Modifier
@@ -1040,32 +1186,107 @@ fun CompareScreen(
                                             )
                                         }
                                     }
+                                } else if (parsed.rawText.isNotBlank()) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        FormattedSpecHtml(
+                                            content = parsed.rawText,
+                                            fontSize = 14.sp,
+                                            lineHeight = 18.sp,
+                                            color = if (isBest) Color(0xFF0F172A) else Color(0xFF334155)
+                                        )
+                                        SpecUnitBadge(
+                                            unit = s?.unit?.ifBlank { null } ?: detectedUnit.ifBlank { null },
+                                            details = parsed.rawText
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "No data",
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF94A3B8)
+                                    )
                                 }
 
-                                // Spec Image Thumbnails (Under progress bar, as in screenshot 2.png)
+                                // Spec Image Thumbnails (IMG_0003: with Full Screen button overlay & filename)
                                 val specPics = s?.pictures ?: emptyList()
                                 if (specPics.isNotEmpty()) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 4.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = "SPECIFICATION PICTURES (${specPics.size})",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF64748B),
+                                        letterSpacing = 0.5.sp
+                                    )
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.padding(top = 4.dp)
                                     ) {
-                                        specPics.forEach { pic ->
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                        items(specPics) { pic ->
+                                            Box(
                                                 modifier = Modifier
-                                                    .size(width = 60.dp, height = 44.dp)
+                                                    .size(width = 170.dp, height = 115.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(Color(0xFFF1F5F9))
+                                                    .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(10.dp))
                                                     .clickable { fullScreenPictureUrl = pic.url }
                                             ) {
-                                                val context = LocalContext.current
                                                 AsyncImage(
-                                                    model = resolveImageModel(context, pic.url),
+                                                    model = resolveImageModel(LocalContext.current, pic.url, preferredName = pic.name),
                                                     contentDescription = pic.name,
                                                     contentScale = ContentScale.Crop,
                                                     modifier = Modifier.fillMaxSize()
                                                 )
+
+                                                // Full screen overlay button (IMG_0003)
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = Color.Black.copy(alpha = 0.7f),
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .padding(6.dp)
+                                                        .clickable { fullScreenPictureUrl = pic.url }
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.OpenInFull,
+                                                            contentDescription = "Full screen",
+                                                            tint = Color.White,
+                                                            modifier = Modifier.size(10.dp)
+                                                        )
+                                                        Spacer(Modifier.width(3.dp))
+                                                        Text(
+                                                            "Full screen",
+                                                            fontSize = 9.sp,
+                                                            color = Color.White,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
+
+                                                // Filename label at bottom overlay (IMG_0003)
+                                                Surface(
+                                                    color = Color.Black.copy(alpha = 0.55f),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .align(Alignment.BottomCenter)
+                                                ) {
+                                                    Text(
+                                                        text = pic.name.ifBlank { "IMG_${(s?.id ?: "0000").takeLast(4)}.png" },
+                                                        color = Color.White,
+                                                        fontSize = 9.sp,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1085,8 +1306,10 @@ fun RecordSlotCardView(
     index: Int,
     slotProd: ProductItem?,
     recordSlotsCount: Int,
+    reviewsCount: Int = 0,
     onSelectSlot: () -> Unit,
     onRemoveSlot: () -> Unit,
+    onEditProduct: (ProductItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1112,17 +1335,49 @@ fun RecordSlotCardView(
                     letterSpacing = 0.8.sp
                 )
 
-                if (recordSlotsCount > 2 || slotProd != null) {
-                    IconButton(
-                        onClick = onRemoveSlot,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = if (recordSlotsCount > 2) "Remove slot" else "Clear slot",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(16.dp)
-                        )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (slotProd != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.Transparent,
+                            modifier = Modifier.clickable { onEditProduct(slotProd) }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Edit product",
+                                    tint = Color(0xFF4F46E5),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "Edit product",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF4F46E5)
+                                )
+                            }
+                        }
+                    }
+
+                    if (recordSlotsCount > 2 || slotProd != null) {
+                        IconButton(
+                            onClick = onRemoveSlot,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = if (recordSlotsCount > 2) "Remove slot" else "Clear slot",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1183,12 +1438,14 @@ fun RecordSlotCardView(
                     }
                 }
             } else {
-                // Filled Record Card
+                // Filled Record Card matching IMG_0002_0aabfdf2.PNG
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFFF8FAFC),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectSlot() }
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -1197,17 +1454,19 @@ fun RecordSlotCardView(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color.White,
+                            color = Color(0xFFF8FAFC),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
                             modifier = Modifier.size(48.dp)
                         ) {
                             val pic = slotProd.pictures.firstOrNull()?.url
-                            if (!pic.isNullOrBlank()) {
+                            val picName = slotProd.pictures.firstOrNull()?.name
+                            if (!pic.isNullOrBlank() || !picName.isNullOrBlank()) {
                                 val context = LocalContext.current
                                 AsyncImage(
-                                    model = resolveImageModel(context, pic),
+                                    model = resolveImageModel(context, pic ?: "", preferredName = picName),
                                     contentDescription = slotProd.name,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize().padding(3.dp)
                                 )
                             } else {
                                 DeviceGraphicPlaceholder(
@@ -1224,39 +1483,38 @@ fun RecordSlotCardView(
                                 text = slotProd.name,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
-                                color = Color(0xFF0F172A)
+                                color = Color(0xFF0F172A),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                text = slotProd.brand,
-                                fontSize = 12.sp,
-                                color = Color(0xFF64748B)
-                            )
-                            if (slotProd.tags.isNotEmpty()) {
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(top = 2.dp)
+                            ) {
                                 Text(
-                                    text = slotProd.tags.take(2).joinToString(", "),
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF4F46E5)
+                                    text = "✓ Selected",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF059669)
+                                )
+                                Text(
+                                    text = "/ ${slotProd.brand} / $reviewsCount reviews",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            OutlinedButton(
-                                onClick = onSelectSlot,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.height(30.dp)
-                            ) {
-                                Text("Change", fontSize = 11.sp)
-                            }
-
-                            IconButton(
-                                onClick = onRemoveSlot,
-                                modifier = Modifier.size(30.dp)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
-                            }
-                        }
+                        Icon(
+                            Icons.Default.UnfoldMore,
+                            contentDescription = "Change product",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
@@ -1274,7 +1532,7 @@ data class ParsedNumericSpec(
 )
 
 // Helper function to extract numeric values and units for specs
-fun parseNumericSpec(details: String?, specUnit: String?, specName: String): ParsedNumericSpec {
+fun parseNumericSpec(details: String?, specUnit: String?, specName: String, isNumeric: Boolean? = null): ParsedNumericSpec {
     if (details.isNullOrBlank()) {
         return ParsedNumericSpec(hasNumeric = false, value = 0f, unit = specUnit ?: "", displayUnit = specUnit ?: "", rawText = "")
     }
@@ -1284,6 +1542,11 @@ fun parseNumericSpec(details: String?, specUnit: String?, specName: String): Par
     }
 
     val preferredUnit = specUnit?.trim() ?: ""
+
+    // If specification explicitly specifies isNumeric === false, NEVER treat as numeric!
+    if (isNumeric == false) {
+        return ParsedNumericSpec(hasNumeric = false, value = 0f, unit = preferredUnit, displayUnit = preferredUnit, rawText = clean)
+    }
 
     // Currency prefix match (e.g. $599, Rm300, €50)
     val currencyMatch = Regex("""^([$€£¥₹]|Rm|RM)\s*([0-9,]+(?:\.[0-9]+)?)""").find(clean)
@@ -1296,8 +1559,20 @@ fun parseNumericSpec(details: String?, specUnit: String?, specName: String): Par
         }
     }
 
+    // If text contains newlines, bullets, or is narrative (> 45 chars), do NOT auto-parse as numeric
+    // unless spec explicitly has isNumeric === true
+    if (isNumeric != true && (clean.contains('\n') || clean.contains('•') || clean.length > 45)) {
+        return ParsedNumericSpec(hasNumeric = false, value = 0f, unit = preferredUnit, displayUnit = preferredUnit, rawText = clean)
+    }
+
     // Number followed by optional unit: e.g. "201 g", "100g", "60hour", "11111"
-    val generalMatch = Regex("""([0-9,]+(?:\.[0-9]+)?)\s*([a-zA-Z$€£%°/"″]+)?""").find(clean)
+    val regexPattern = if (isNumeric == true) {
+        Regex("""([0-9,]+(?:\.[0-9]+)?)\s*([a-zA-Z$€£%°/"″]+)?""")
+    } else {
+        Regex("""^\s*([0-9,]+(?:\.[0-9]+)?)\s*([a-zA-Z$€£%°/"″]+)?""")
+    }
+
+    val generalMatch = regexPattern.find(clean)
     if (generalMatch != null) {
         val num = generalMatch.groupValues[1].replace(",", "").toFloatOrNull()
         if (num != null) {
@@ -1327,3 +1602,29 @@ fun parseNumericSpec(details: String?, specUnit: String?, specName: String): Par
 
     return ParsedNumericSpec(hasNumeric = false, value = 0f, unit = preferredUnit, displayUnit = preferredUnit, rawText = clean)
 }
+
+fun getSpecBestValueMode(specName: String, unit: String, specSortModes: Map<String, String>): String {
+    val specKey = specName.trim().lowercase()
+    specSortModes[specKey]?.let { return it }
+    val lowerName = specName.lowercase()
+    val lowerUnit = unit.lowercase()
+    if (
+        lowerName.contains("weight") ||
+        lowerName.contains("weigh") ||
+        lowerName.contains("gram") ||
+        lowerName.contains("price") ||
+        lowerName.contains("cost") ||
+        lowerName.contains("thickness") ||
+        lowerName.contains("latency") ||
+        lowerName.contains("delay") ||
+        lowerUnit == "g" ||
+        lowerUnit == "kg" ||
+        lowerUnit == "$" ||
+        lowerUnit == "€" ||
+        lowerUnit == "£"
+    ) {
+        return "lower"
+    }
+    return "higher"
+}
+

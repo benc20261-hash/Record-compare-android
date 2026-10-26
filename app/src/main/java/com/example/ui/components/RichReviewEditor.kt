@@ -11,6 +11,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -110,31 +111,59 @@ fun RichReviewEditor(
 
     val initialBodyHtml = remember(initialReview) {
         var body = initialReview?.body ?: "<p>Introduction and specs...</p>"
-        // Rewrite file and relative image URLs to virtual https://local.review URLs
-        val fileImgRegex = Regex("""src=["']file:/*([^"']+)["']""", RegexOption.IGNORE_CASE)
-        body = fileImgRegex.replace(body) { match ->
-            val fullPath = "/" + match.groupValues[1].trimStart('/')
-            val file = File(fullPath)
-            if (fullPath.contains("review_images/")) {
-                "src=\"https://local.review/review_images/${file.name}\""
-            } else {
-                "src=\"https://local.review/image?path=${URLEncoder.encode(fullPath, "UTF-8")}\""
-            }
+
+        // Convert markdown images ![alt](url) to rich HTML figures
+        val markdownImgRegex = Regex("""!\[(.*?)\]\((.*?)\)""")
+        body = markdownImgRegex.replace(body) { match ->
+            val alt = match.groupValues[1].trim()
+            val urlOrPath = match.groupValues[2].trim()
+            val cleanAlt = alt.ifBlank { "Review Photo" }
+            val filename = urlOrPath.substringAfterLast("/").substringBefore("?")
+            val targetUrl = if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) urlOrPath else "https://local.review/review_images/$filename"
+            "<figure class=\"review-figure\"><img src=\"$targetUrl\" alt=\"$cleanAlt\" loading=\"lazy\" /><figcaption class=\"review-caption\">$cleanAlt</figcaption></figure>"
         }
-        val absolutePathImgRegex = Regex("""src=["'](\/data\/[^"']+)["']""", RegexOption.IGNORE_CASE)
-        body = absolutePathImgRegex.replace(body) { match ->
-            val fullPath = match.groupValues[1]
-            val file = File(fullPath)
-            if (fullPath.contains("review_images/")) {
-                "src=\"https://local.review/review_images/${file.name}\""
-            } else {
-                "src=\"https://local.review/image?path=${URLEncoder.encode(fullPath, "UTF-8")}\""
+
+        // Rewrite all <img> tags to virtual https://local.review URLs so WebView loads them 100% reliably
+        val imgTagRegex = Regex("""<img\b([^>]*)>""", RegexOption.IGNORE_CASE)
+        body = imgTagRegex.replace(body) { match ->
+            val attrs = match.groupValues[1]
+            val srcMatch = Regex("""src=["']([^"']*)["']""", RegexOption.IGNORE_CASE).find(attrs)
+            val attIdMatch = Regex("""(?:data-attachment-id|dataAttachmentId|data-attachment-token)=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(attrs)
+            val altMatch = Regex("""alt=["']([^"']*)["']""", RegexOption.IGNORE_CASE).find(attrs)
+
+            val rawSrc = srcMatch?.groupValues?.get(1)?.trim() ?: ""
+            val attId = attIdMatch?.groupValues?.get(1)?.trim() ?: ""
+            val alt = altMatch?.groupValues?.get(1)?.trim() ?: ""
+
+            val targetUrl = when {
+                rawSrc.startsWith("file://") || rawSrc.startsWith("/data/") -> {
+                    val fn = rawSrc.substringAfterLast('/')
+                    "https://local.review/review_images/$fn"
+                }
+                rawSrc.contains("review_images/") || rawSrc.contains("pictures/") || rawSrc.contains("images/") -> {
+                    val fn = rawSrc.substringAfterLast('/').substringBefore('?')
+                    "https://local.review/review_images/$fn"
+                }
+                attId.isNotBlank() -> "https://local.review/review_images/$attId"
+                rawSrc.startsWith("http://") || rawSrc.startsWith("https://") -> rawSrc
+                rawSrc.isNotBlank() && !rawSrc.startsWith("blob:") && !rawSrc.startsWith("data:") -> {
+                    val fn = rawSrc.substringAfterLast('/').substringBefore('?')
+                    "https://local.review/review_images/$fn"
+                }
+                else -> ""
             }
-        }
-        val relativeReviewImgRegex = Regex("""src=["'](?:review_images|images)\/([^"']+)["']""", RegexOption.IGNORE_CASE)
-        body = relativeReviewImgRegex.replace(body) { match ->
-            val filename = match.groupValues[1]
-            "src=\"https://local.review/review_images/$filename\""
+
+            if (targetUrl.isNotBlank()) {
+                var newAttrs = attrs
+                if (srcMatch != null) {
+                    newAttrs = newAttrs.replace(srcMatch.value, "src=\"$targetUrl\"")
+                } else {
+                    newAttrs = "$newAttrs src=\"$targetUrl\""
+                }
+                "<img$newAttrs>"
+            } else {
+                match.value
+            }
         }
         body
     }
@@ -154,7 +183,11 @@ fun RichReviewEditor(
                 .testTag("rich_review_editor_screen"),
             color = Color.White
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+            ) {
                 // Top Action Bar
                 Surface(
                     color = Color.White,
@@ -513,11 +546,13 @@ fun RichReviewEditor(
                                     AsyncImage(
                                         model = resolveImageModel(context, thumb),
                                         contentDescription = null,
-                                        contentScale = ContentScale.Crop,
+                                        contentScale = ContentScale.Fit,
                                         modifier = Modifier
                                             .size(32.dp)
                                             .clip(RoundedCornerShape(6.dp))
-                                            .background(Color(0xFFE2E8F0))
+                                            .background(Color(0xFFF8FAFC))
+                                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(6.dp))
+                                            .padding(2.dp)
                                     )
                                 }
                                 Column {
@@ -591,7 +626,9 @@ fun RichReviewEditor(
 
                     // Review Author & Tip Row (Screenshot edit and add table.png)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -599,7 +636,9 @@ fun RichReviewEditor(
                             text = "Review Author:",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF475569)
+                            color = Color(0xFF475569),
+                            maxLines = 1,
+                            softWrap = false
                         )
                         OutlinedTextField(
                             value = authorName,
@@ -618,7 +657,7 @@ fun RichReviewEditor(
                             fontSize = 10.sp,
                             color = Color(0xFF94A3B8),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            softWrap = false
                         )
                     }
                 }
@@ -680,7 +719,7 @@ fun RichReviewEditor(
                                         val path = reqUrl.path ?: ""
                                         val urlStr = reqUrl.toString()
 
-                                        if (host == "local.review" || host == "appassets.local" || path.contains("review_images") || path.contains("pictures") || urlStr.contains("review_images") || urlStr.contains("pictures")) {
+                                        if (host == "local.review" || host == "appassets.local" || path.contains("review_images") || path.contains("pictures") || path.contains("images") || urlStr.contains("review_images") || urlStr.contains("pictures") || urlStr.contains("/images/")) {
                                             try {
                                                 val pathParam = reqUrl.getQueryParameter("path")
                                                 val filename = reqUrl.lastPathSegment ?: ""
@@ -719,11 +758,27 @@ fun RichReviewEditor(
                                                 }
                                                 if (targetFile == null || !targetFile.exists()) {
                                                     val cleanName = filename.lowercase()
-                                                    val dirs = listOf(File(ctx.filesDir, "review_images"), File(ctx.filesDir, "pictures"))
+                                                    val cleanNoExt = filename.substringBeforeLast(".").lowercase()
+                                                    val decoded = try { URLDecoder.decode(filename, "UTF-8").lowercase() } catch (_: Exception) { cleanName }
+                                                    val decodedNoExt = decoded.substringBeforeLast(".")
+                                                    val dirs = listOf(
+                                                        File(ctx.filesDir, "review_images"),
+                                                        File(ctx.filesDir, "pictures"),
+                                                        File(ctx.cacheDir, "review_images"),
+                                                        File(ctx.cacheDir, "pictures")
+                                                    )
                                                     for (dir in dirs) {
                                                         if (dir.exists() && dir.isDirectory) {
-                                                            targetFile = dir.listFiles()?.firstOrNull {
-                                                                it.name.lowercase() == cleanName || it.name.lowercase().contains(cleanName) || cleanName.contains(it.name.lowercase())
+                                                            val files = dir.listFiles() ?: continue
+                                                            targetFile = files.firstOrNull { f ->
+                                                                val fnLower = f.name.lowercase()
+                                                                val fnNoExt = f.nameWithoutExtension.lowercase()
+                                                                fnLower == cleanName || fnNoExt == cleanName ||
+                                                                fnLower == cleanNoExt || fnNoExt == cleanNoExt ||
+                                                                fnLower == decoded || fnNoExt == decoded ||
+                                                                (cleanName.length >= 3 && (fnLower.startsWith("${cleanName}.") || fnLower.startsWith("${cleanName}_"))) ||
+                                                                (cleanNoExt.length >= 3 && (fnLower.startsWith("${cleanNoExt}.") || fnLower.startsWith("${cleanNoExt}_"))) ||
+                                                                (cleanName.length >= 4 && (fnLower.contains(cleanName) || cleanName.contains(fnNoExt)))
                                                             }
                                                             if (targetFile != null && targetFile.exists()) break
                                                         }
@@ -746,6 +801,16 @@ fun RichReviewEditor(
                                                     )
                                                     return WebResourceResponse(mime, null, 200, "OK", headers, targetFile.inputStream())
                                                 }
+
+                                                // Clean placeholder fallback instead of broken image
+                                                val cleanLabel = (if (filename.isNotBlank() && filename != "review_images") filename.substringBeforeLast(".") else "Review Image").take(24)
+                                                val fallbackSvg = """<svg xmlns="http://www.w3.org/2000/svg" width="360" height="220" viewBox="0 0 360 220"><rect width="100%" height="100%" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/><text x="50%" y="44%" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="28" fill="#94a3b8">📷</text><text x="50%" y="64%" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="12" font-weight="600" fill="#64748b">$cleanLabel</text></svg>"""
+                                                val headers = mapOf(
+                                                    "Access-Control-Allow-Origin" to "*",
+                                                    "Access-Control-Allow-Methods" to "GET",
+                                                    "Cache-Control" to "no-cache"
+                                                )
+                                                return WebResourceResponse("image/svg+xml", "UTF-8", 200, "OK", headers, ByteArrayInputStream(fallbackSvg.toByteArray(Charsets.UTF_8)))
                                             } catch (e: Exception) {
                                                 e.printStackTrace()
                                             }

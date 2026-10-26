@@ -15,6 +15,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import com.example.model.ProductItem
 import com.example.model.resolveImageModel
 
@@ -39,6 +45,9 @@ fun ComparisonTray(
     onOpenSmartAdd: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var productToRemove by remember { mutableStateOf<ProductItem?>(null) }
+    var showClearConfirm by remember { mutableStateOf(false) }
+
     if (selectedProducts.isEmpty()) return
 
     Surface(
@@ -101,15 +110,29 @@ fun ComparisonTray(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             val firstPic = p.pictures.firstOrNull()?.url
-                            if (!firstPic.isNullOrBlank()) {
-                                val context = LocalContext.current
-                                AsyncImage(
-                                    model = resolveImageModel(context, firstPic),
+                            val firstPicName = p.pictures.firstOrNull()?.name
+                            val context = LocalContext.current
+                            if (!firstPic.isNullOrBlank() || !firstPicName.isNullOrBlank()) {
+                                SubcomposeAsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(resolveImageModel(context, firstPic ?: "", preferredName = firstPicName))
+                                        .crossfade(true)
+                                        .build(),
                                     contentDescription = p.name,
-                                    contentScale = ContentScale.Crop,
+                                    contentScale = ContentScale.Fit,
+                                    error = {
+                                        DeviceGraphicPlaceholder(
+                                            title = p.name,
+                                            brand = p.brand,
+                                            tags = p.tags,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    },
                                     modifier = Modifier
                                         .size(24.dp)
                                         .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFFF8FAFC))
+                                        .padding(1.dp)
                                 )
                             } else {
                                 Surface(
@@ -138,7 +161,7 @@ fun ComparisonTray(
 
                             // Unselect / Remove button
                             IconButton(
-                                onClick = { onRemoveProduct(p.id) },
+                                onClick = { productToRemove = p },
                                 modifier = Modifier.size(20.dp)
                             ) {
                                 Icon(
@@ -160,7 +183,7 @@ fun ComparisonTray(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = onClearAll,
+                    onClick = { showClearConfirm = true },
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
@@ -194,7 +217,7 @@ fun ComparisonTray(
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Smart Add", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        ButtonText("Smart Add", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFCD34D))
                     }
 
                     // Compare Now button
@@ -211,7 +234,7 @@ fun ComparisonTray(
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                         modifier = Modifier.height(34.dp)
                     ) {
-                        Text("Compare Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        ButtonText("Compare Now", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         Spacer(Modifier.width(4.dp))
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowForward,
@@ -222,5 +245,38 @@ fun ComparisonTray(
                 }
             }
         }
+    }
+
+    // Confirmation dialog: Clear all from tray
+    if (showClearConfirm) {
+        val count = selectedProducts.size
+        val namesStr = selectedProducts.joinToString(", ") { "\"${it.name}\"" }
+        DeleteConfirmDialog(
+            title = "Clear Comparison?",
+            message = "Are you sure you want to remove all $count product${if (count > 1) "s" else ""} ($namesStr) from comparison?",
+            confirmText = "Clear all",
+            testTagPrefix = "tray_clear_all",
+            onConfirm = {
+                showClearConfirm = false
+                onClearAll()
+            },
+            onDismiss = { showClearConfirm = false }
+        )
+    }
+
+    // Confirmation dialog: Remove single product from tray
+    if (productToRemove != null) {
+        val prod = productToRemove!!
+        DeleteConfirmDialog(
+            title = "Remove from Comparison?",
+            message = "Are you sure you want to remove \"${prod.name}\" from comparison?",
+            confirmText = "Remove",
+            testTagPrefix = "tray_remove_product",
+            onConfirm = {
+                onRemoveProduct(prod.id)
+                productToRemove = null
+            },
+            onDismiss = { productToRemove = null }
+        )
     }
 }

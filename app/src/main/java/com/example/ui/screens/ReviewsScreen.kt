@@ -32,10 +32,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import com.example.model.PictureItem
 import com.example.model.ProductItem
 import com.example.model.ReviewItem
 import com.example.model.resolveImageModel
+import com.example.ui.components.ButtonText
+import com.example.ui.components.DeleteConfirmDialog
 import com.example.ui.components.FullScreenPhotoLightbox
 import com.example.ui.components.TagBrandProductFilter
 
@@ -83,6 +87,7 @@ fun ReviewsScreen(
     }
 
     var selectedFilterTag by remember { mutableStateOf("All") }
+    var reviewToDelete by remember { mutableStateOf<ReviewItem?>(null) }
 
     val allTags = remember(products) {
         val set = linkedSetOf<String>()
@@ -148,8 +153,8 @@ fun ReviewsScreen(
         columns = GridCells.Adaptive(minSize = 340.dp),
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFF8FAFC)),
-        contentPadding = PaddingValues(16.dp),
+            .background(com.example.ui.theme.AppColors.CanvasBackground),
+        contentPadding = com.example.ui.theme.AppSpacing.ScreenContentPaddingScrollable,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -223,12 +228,12 @@ fun ReviewsScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text(
+                            ButtonText(
                                 text = "Batch Import HTML / Folder",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                color = Color(0xFF0F172A),
+                                modifier = Modifier.weight(1f)
                             )
                             Spacer(Modifier.width(2.dp))
                             Icon(
@@ -296,7 +301,7 @@ fun ReviewsScreen(
                         onClick = onWriteReview,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
                         shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         modifier = Modifier
                             .weight(1f)
                             .height(42.dp)
@@ -309,11 +314,12 @@ fun ReviewsScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(6.dp))
-                        Text(
+                        ButtonText(
                             text = "Write a Review",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -694,8 +700,9 @@ fun ReviewsScreen(
                 ) {
                     // Top: Product Pill Badge with External Link (IMG_9632.PNG)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
@@ -720,7 +727,9 @@ fun ReviewsScreen(
                                     text = linkedProductTitle,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF4F46E5)
+                                    color = Color(0xFF4F46E5),
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                                 Icon(
                                     Icons.AutoMirrored.Filled.OpenInNew,
@@ -733,12 +742,21 @@ fun ReviewsScreen(
                     }
 
                     // Title
-                    Text(
-                        text = review.title.ifBlank { "Review for $linkedProductTitle" },
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = review.title.ifBlank { "Review for $linkedProductTitle" },
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
 
                     // Reviewer Metadata Row (Verified Reviewer, Stars, View/Edit/Delete actions)
                     Row(
@@ -747,6 +765,9 @@ fun ReviewsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState()),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
@@ -828,8 +849,10 @@ fun ReviewsScreen(
                             }
 
                             IconButton(
-                                onClick = { onDeleteReview(review.id) },
-                                modifier = Modifier.size(28.dp)
+                                onClick = { reviewToDelete = review },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .testTag("delete_review_${review.id}_btn")
                             ) {
                                 Icon(
                                     Icons.Default.Delete,
@@ -837,6 +860,36 @@ fun ReviewsScreen(
                                     tint = Color(0xFFEF4444),
                                     modifier = Modifier.size(15.dp)
                                 )
+                            }
+                        }
+                    }
+
+                    val hasAppScheme = remember(review.body) {
+                        com.example.ui.util.UriHelper.isAppSchemeUrl(
+                            Regex("""\b([a-zA-Z][a-zA-Z0-9+.-]*://[^\s<>"'\)]+)""").find(review.body)?.value
+                        )
+                    }
+                    if (hasAppScheme || review.body.contains("upnote://", ignoreCase = true)) {
+                        val appLabel = when {
+                            review.body.contains("upnote://", ignoreCase = true) -> "UpNote Note Linked"
+                            review.body.contains("obsidian://", ignoreCase = true) -> "Obsidian Note Linked"
+                            review.body.contains("notion://", ignoreCase = true) -> "Notion Note Linked"
+                            review.body.contains("onenote://", ignoreCase = true) -> "OneNote Note Linked"
+                            review.body.contains("marginnote", ignoreCase = true) -> "MarginNote Linked"
+                            else -> "App Note Linked"
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFF3E8FF),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE9D5FF))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(12.dp))
+                                Text(appLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7C3AED))
                             }
                         }
                     }
@@ -849,7 +902,7 @@ fun ReviewsScreen(
                     ) {
                         // Strip HTML tags for clean card excerpt
                         val cleanBody = remember(review.body) {
-                            review.body.replace(Regex("<[^>]*>"), " ").trim()
+                            review.body.take(600).replace(Regex("<[^>]*>"), " ").replace(Regex("""\s+"""), " ").trim()
                         }
                         Text(
                             text = cleanBody,
@@ -866,11 +919,27 @@ fun ReviewsScreen(
                     val reviewPictures = remember(review) {
                         val list = mutableListOf<PictureItem>()
                         if (review.pictures.isNotEmpty()) list.addAll(review.pictures)
-                        val imgRegex = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                        val imgRegex = Regex("""<img\b([^>]*)>""", RegexOption.IGNORE_CASE)
                         imgRegex.findAll(review.body).forEachIndexed { idx, match ->
-                            val url = match.groupValues[1]
-                            if (list.none { it.url == url }) {
-                                list.add(PictureItem("card_img_$idx", "Photo ${list.size + 1}", url))
+                            val attrs = match.groupValues[1]
+                            val src = Regex("""src=["']([^"']*)["']""", RegexOption.IGNORE_CASE).find(attrs)?.groupValues?.get(1)?.trim() ?: ""
+                            val attId = Regex("""(?:data-attachment-id|dataAttachmentId|data-attachment-token)=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(attrs)?.groupValues?.get(1)?.trim() ?: ""
+                            val alt = Regex("""alt=["']([^"']*)["']""", RegexOption.IGNORE_CASE).find(attrs)?.groupValues?.get(1)?.trim() ?: "Photo ${list.size + 1}"
+                            val effectiveUrl = when {
+                                src.isNotBlank() && !src.startsWith("blob:") -> src
+                                attId.isNotBlank() -> "https://local.review/review_images/$attId"
+                                else -> ""
+                            }
+                            if (effectiveUrl.isNotBlank() && list.none { it.url == effectiveUrl || (attId.isNotBlank() && it.id == attId) }) {
+                                list.add(PictureItem(id = attId.ifBlank { "card_img_$idx" }, name = alt, url = effectiveUrl))
+                            }
+                        }
+                        val mdImgRegex = Regex("""!\[(.*?)\]\((.*?)\)""")
+                        mdImgRegex.findAll(review.body).forEachIndexed { idx, match ->
+                            val alt = match.groupValues[1].ifBlank { "Photo ${list.size + 1}" }
+                            val url = match.groupValues[2].trim()
+                            if (url.isNotBlank() && list.none { it.url == url }) {
+                                list.add(PictureItem(id = "md_img_$idx", name = alt, url = url))
                             }
                         }
                         list
@@ -890,17 +959,27 @@ fun ReviewsScreen(
                                         .size(width = 68.dp, height = 68.dp)
                                         .clip(RoundedCornerShape(10.dp))
                                         .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
-                                        .background(Color(0xFFF1F5F9))
+                                        .background(Color(0xFFF8FAFC))
                                         .clickable {
                                             lightboxImages = reviewPictures
                                             lightboxInitialIndex = idx
                                         }
                                 ) {
+                                    val prefName = remember(pic.id, pic.name) {
+                                        if (pic.id.isNotBlank() && !pic.id.startsWith("card_img_") && !pic.id.startsWith("body_img_") && !pic.id.startsWith("md_img_")) pic.id else pic.name
+                                    }
+                                    val resolvedPicModel = remember(pic.url, prefName) {
+                                        resolveImageModel(context, pic.url, preferredName = prefName)
+                                    }
                                     AsyncImage(
-                                        model = resolveImageModel(context, pic.url),
+                                        model = ImageRequest.Builder(context)
+                                            .data(resolvedPicModel)
+                                            .size(180, 180)
+                                            .crossfade(true)
+                                            .build(),
                                         contentDescription = pic.name,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxSize().padding(2.dp)
                                     )
                                 }
                             }
@@ -936,6 +1015,21 @@ fun ReviewsScreen(
             images = images,
             initialIndex = lightboxInitialIndex,
             onDismiss = { lightboxImages = null }
+        )
+    }
+
+    // Delete Review Confirmation Dialog
+    reviewToDelete?.let { review ->
+        DeleteConfirmDialog(
+            title = "Delete Review",
+            message = "Are you sure you want to delete review \"${review.title}\" by ${review.authorName}? This action cannot be undone.",
+            confirmText = "Delete",
+            testTagPrefix = "review_card_delete",
+            onConfirm = {
+                onDeleteReview(review.id)
+                reviewToDelete = null
+            },
+            onDismiss = { reviewToDelete = null }
         )
     }
 }

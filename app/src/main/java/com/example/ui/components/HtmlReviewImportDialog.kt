@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -71,68 +72,78 @@ fun HtmlReviewImportDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color.White,
             modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.94f)
-                .padding(vertical = 8.dp)
+                .fillMaxSize()
+                .testTag("html_review_import_dialog"),
+            color = Color(0xFFF8FAFC)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(14.dp)
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Scaffold(
+                contentWindowInsets = WindowInsets.systemBars,
+                topBar = {
+                    Surface(
+                        color = Color.White,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFEEF2FF),
-                            modifier = Modifier.size(40.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    Icons.Default.FolderSpecial,
-                                    contentDescription = null,
-                                    tint = Color(0xFF4F46E5),
-                                    modifier = Modifier.size(22.dp)
-                                )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                IconButton(onClick = onDismiss, modifier = Modifier.testTag("import_reviews_back_btn")) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = Color(0xFF0F172A)
+                                    )
+                                }
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFEEF2FF),
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            Icons.Default.FolderSpecial,
+                                            contentDescription = null,
+                                            tint = Color(0xFF4F46E5),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Column {
+                                    Text(
+                                        text = "Import UpNote Reviews",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Text(
+                                        text = "Found ${editableDrafts.size} note(s) • $totalImages picture(s)",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
                             }
                         }
-                        Column {
-                            Text(
-                                text = "Import UpNote Reviews",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0F172A)
-                            )
-                            Text(
-                                text = "Found ${editableDrafts.size} note(s) with $totalImages picture(s)",
-                                fontSize = 12.sp,
-                                color = Color(0xFF64748B)
-                            )
-                        }
-                    }
-
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF64748B))
                     }
                 }
-
-                Spacer(Modifier.height(14.dp))
-                HorizontalDivider(color = Color(0xFFF1F5F9))
-                Spacer(Modifier.height(14.dp))
+            ) { paddingValues ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
 
                 // Scrollable list of reviews
                 LazyColumn(
@@ -339,11 +350,13 @@ fun HtmlReviewImportDialog(
                                                 AsyncImage(
                                                     model = resolveImageModel(context, pic.url),
                                                     contentDescription = pic.name,
-                                                    contentScale = ContentScale.Crop,
+                                                    contentScale = ContentScale.Fit,
                                                     modifier = Modifier
                                                         .size(54.dp)
                                                         .clip(RoundedCornerShape(8.dp))
+                                                        .background(Color(0xFFF8FAFC))
                                                         .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
+                                                        .padding(2.dp)
                                                         .clickable {
                                                             lightboxImages = draft.pictures
                                                             lightboxInitialIndex = pIdx
@@ -444,6 +457,7 @@ fun HtmlReviewImportDialog(
             }
         }
     }
+}
 
     // Modal to view full rendered note with styling and images
     previewingDraft?.let { draft ->
@@ -649,52 +663,66 @@ fun RenderedHtmlNotePreviewModal(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color.White,
             modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.94f)
-                .padding(vertical = 8.dp)
+                .fillMaxSize()
+                .testTag("rendered_html_note_preview"),
+            color = Color(0xFFF8FAFC)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Header bar
-                Surface(
-                    color = Color(0xFFF8FAFC),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+            Scaffold(
+                contentWindowInsets = WindowInsets.systemBars,
+                topBar = {
+                    Surface(
+                        color = Color.White,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Preview: ${draft.title}",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0F172A),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = if (assignedProduct != null) "Assigned to: ${assignedProduct.name} • ${draft.pictures.size} photos" else "Standalone review • ${draft.pictures.size} photos",
-                                fontSize = 11.sp,
-                                color = Color(0xFF64748B)
-                            )
-                        }
-
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                IconButton(onClick = onDismiss, modifier = Modifier.testTag("rendered_html_back_btn")) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = Color(0xFF0F172A)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "Preview: ${draft.title}",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = if (assignedProduct != null) "Assigned to: ${assignedProduct.name} • ${draft.pictures.size} photos" else "Standalone review • ${draft.pictures.size} photos",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-
+            ) { paddingValues ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                ) {
                 // Rendered HTML View with smooth scrolling & image interception
                 Box(
                     modifier = Modifier
@@ -745,7 +773,7 @@ fun RenderedHtmlNotePreviewModal(
                                         val path = reqUrl.path ?: ""
                                         val urlStr = reqUrl.toString()
 
-                                        if (host == "local.review" || host == "appassets.local" || path.contains("review_images") || path.contains("pictures") || urlStr.contains("review_images") || urlStr.contains("pictures")) {
+                                        if (host == "local.review" || host == "appassets.local" || path.contains("review_images") || path.contains("pictures") || path.contains("images") || urlStr.contains("review_images") || urlStr.contains("pictures") || urlStr.contains("/images/")) {
                                             try {
                                                 val pathParam = reqUrl.getQueryParameter("path")
                                                 val filename = reqUrl.lastPathSegment ?: ""
@@ -830,11 +858,13 @@ fun RenderedHtmlNotePreviewModal(
                             }
                         },
                         update = { webView ->
-                            // CRITICAL FIX: Only reload if the HTML document actually changed
-                            if (webView.tag != previewHtml) {
-                                webView.tag = previewHtml
-                                webView.loadDataWithBaseURL("https://local.review/", previewHtml, "text/html", "UTF-8", null)
-                            }
+                            try {
+                                // CRITICAL FIX: Only reload if the HTML document actually changed
+                                if (webView.tag != previewHtml) {
+                                    webView.tag = previewHtml
+                                    webView.loadDataWithBaseURL("https://local.review/", previewHtml, "text/html", "UTF-8", null)
+                                }
+                            } catch (_: Exception) {}
                         },
                         onRelease = { webView ->
                             try {
@@ -873,4 +903,5 @@ fun RenderedHtmlNotePreviewModal(
             }
         }
     }
+}
 }

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Base64
 import com.example.data.local.AppDatabase
 import com.example.data.local.ProductEntity
 import com.example.data.local.ReviewEntity
@@ -109,6 +110,9 @@ object BackupArchiveManager {
             so.put("details", s.details)
             so.put("unit", s.unit ?: "")
             so.put("order", s.orderIndex)
+            if (s.isNumeric != null) {
+                so.put("isNumeric", s.isNumeric)
+            }
 
             val picsArr = JSONArray()
             s.pictures.forEach { pic ->
@@ -526,33 +530,46 @@ object BackupArchiveManager {
         database: AppDatabase
     ): RestoreResult = withContext(Dispatchers.IO) {
         var databaseJsonString: String? = null
+        var fallbackJsonString: String? = null
         val destReviewImagesDir = File(context.filesDir, "review_images")
-        destReviewImagesDir.mkdirs()
+        if (!destReviewImagesDir.exists()) destReviewImagesDir.mkdirs()
         val destPicturesDir = File(context.filesDir, "pictures")
-        destPicturesDir.mkdirs()
+        if (!destPicturesDir.exists()) destPicturesDir.mkdirs()
 
         try {
             ZipInputStream(BufferedInputStream(FileInputStream(zipFile))).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
-                    val rawName = entry.name
+                    val rawName = entry.name.replace('\\', '/')
                     val nameLower = rawName.lowercase()
                     val filename = rawName.substringAfterLast("/")
+                    val decodedFilename = try { URLDecoder.decode(filename, "UTF-8") } catch (_: Exception) { filename }
 
-                    if (nameLower.endsWith("database.json") || (nameLower.endsWith(".json") && !nameLower.contains("manifest"))) {
+                    if (nameLower == "database.json" || nameLower.endsWith("/database.json")) {
                         val buffer = ByteArrayOutputStream()
                         zis.copyTo(buffer)
                         databaseJsonString = buffer.toString("UTF-8")
+                    } else if (nameLower.endsWith(".json") && !nameLower.contains("manifest") && databaseJsonString == null) {
+                        val buffer = ByteArrayOutputStream()
+                        zis.copyTo(buffer)
+                        fallbackJsonString = buffer.toString("UTF-8")
                     } else if (!entry.isDirectory && filename.isNotBlank()) {
                         val ext = filename.substringAfterLast(".", "").lowercase()
-                        if (ext in listOf("jpg", "jpeg", "png", "webp", "gif", "svg")) {
+                        val isMediaFolder = nameLower.startsWith("images/") || nameLower.contains("/images/") ||
+                                            nameLower.startsWith("review_images/") || nameLower.contains("/review_images/") ||
+                                            nameLower.startsWith("pictures/") || nameLower.contains("/pictures/") ||
+                                            nameLower.startsWith("files/") || nameLower.contains("/files/") ||
+                                            nameLower.startsWith("attachments/") || nameLower.contains("/attachments/") ||
+                                            nameLower.startsWith("media/") || nameLower.contains("/media/")
+                        val isImageExt = ext in listOf("jpg", "jpeg", "png", "webp", "gif", "svg", "bmp", "jfif", "avif", "ico")
+                        if (isMediaFolder || isImageExt) {
                             val targetFile = File(destReviewImagesDir, filename)
-                            targetFile.outputStream().use { out ->
-                                zis.copyTo(out)
+                            targetFile.outputStream().use { out -> zis.copyTo(out) }
+                            try { targetFile.copyTo(File(destPicturesDir, filename), overwrite = true) } catch (_: Exception) {}
+                            if (decodedFilename != filename && decodedFilename.isNotBlank()) {
+                                try { targetFile.copyTo(File(destReviewImagesDir, decodedFilename), overwrite = true) } catch (_: Exception) {}
+                                try { targetFile.copyTo(File(destPicturesDir, decodedFilename), overwrite = true) } catch (_: Exception) {}
                             }
-                            try {
-                                targetFile.copyTo(File(destPicturesDir, filename), overwrite = true)
-                            } catch (_: Exception) {}
                         }
                     }
                     zis.closeEntry()
@@ -560,11 +577,12 @@ object BackupArchiveManager {
                 }
             }
 
-            if (databaseJsonString.isNullOrBlank()) {
+            val finalJson = databaseJsonString ?: fallbackJsonString
+            if (finalJson.isNullOrBlank()) {
                 return@withContext RestoreResult(false, "ZIP does not contain database.json")
             }
 
-            return@withContext parseAndInsertDatabaseJson(context, databaseJsonString!!, database)
+            return@withContext parseAndInsertDatabaseJson(context, finalJson, database)
         } catch (e: Exception) {
             RestoreResult(false, "ZIP read error: ${e.localizedMessage}")
         }
@@ -590,56 +608,91 @@ object BackupArchiveManager {
         if (picsArr == null) return "[]"
         val newArr = JSONArray()
         val reviewImagesDir = File(context.filesDir, "review_images")
+        if (!reviewImagesDir.exists()) reviewImagesDir.mkdirs()
         val picturesDir = File(context.filesDir, "pictures")
+        if (!picturesDir.exists()) picturesDir.mkdirs()
+
+        val allLocalFiles = (reviewImagesDir.listFiles() ?: emptyArray()).toList() +
+                            (picturesDir.listFiles() ?: emptyArray()).toList()
+
         for (j in 0 until picsArr.length()) {
             val picObj = picsArr.getJSONObject(j)
-            val originalUrl = picObj.optString("url", "")
-            val picId = picObj.optString("id", "")
-            val picName = picObj.optString("name", "")
+            val originalUrl = picObj.optString("url", "").trim()
+            val picId = picObj.optString("id", "").trim()
+            val picName = picObj.optString("name", "").trim()
+            val dataUrl = picObj.optString("dataUrl", "").trim()
+
             var mappedUrl = originalUrl
-            if (originalUrl.isNotBlank()) {
+            var existingFile: File? = null
+
+            // 1. Direct path check if it's already an existing file
+            if (originalUrl.startsWith("file://") || originalUrl.startsWith("/")) {
+                val path = originalUrl.removePrefix("file://")
+                val f = File(path)
+                if (f.exists() && f.isFile) existingFile = f
+            }
+
+            // 2. Lookup by ID in directories
+            if (existingFile == null && picId.isNotBlank()) {
+                val cleanId = picId.lowercase()
+                existingFile = allLocalFiles.firstOrNull { f ->
+                    val fn = f.name.lowercase()
+                    val fNoExt = f.nameWithoutExtension.lowercase()
+                    fn == cleanId || fNoExt == cleanId ||
+                    fn.startsWith("${cleanId}.") || fn.startsWith("${cleanId}_") ||
+                    (cleanId.length >= 4 && fn.contains(cleanId))
+                }
+            }
+
+            // 3. Lookup by URL filename
+            if (existingFile == null && originalUrl.isNotBlank() && !originalUrl.startsWith("blob:")) {
                 val rawFilename = originalUrl.substringAfterLast("/").substringBefore("?")
                 val decodedName = try { URLDecoder.decode(rawFilename, "UTF-8") } catch (_: Exception) { rawFilename }
-                val cleanPicName = picName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-
-                // 1. Direct candidates
-                val candidate1 = File(reviewImagesDir, decodedName)
-                val candidate2 = File(reviewImagesDir, rawFilename)
-                val candidate3 = File(picturesDir, decodedName)
-                val candidate4 = File(picturesDir, rawFilename)
-
-                var existingFile = listOf(candidate1, candidate2, candidate3, candidate4).firstOrNull { it.exists() && it.isFile }
-
-                // 2. ID prefix or contains ID
-                if (existingFile == null && picId.isNotBlank()) {
-                    val allLocalFiles = (reviewImagesDir.listFiles() ?: emptyArray()) + (picturesDir.listFiles() ?: emptyArray())
+                val cand1 = File(reviewImagesDir, rawFilename).takeIf { it.exists() && it.isFile }
+                val cand2 = File(reviewImagesDir, decodedName).takeIf { it.exists() && it.isFile }
+                val cand3 = File(picturesDir, rawFilename).takeIf { it.exists() && it.isFile }
+                val cand4 = File(picturesDir, decodedName).takeIf { it.exists() && it.isFile }
+                existingFile = cand1 ?: cand2 ?: cand3 ?: cand4
+                if (existingFile == null) {
+                    val rawLower = rawFilename.lowercase()
+                    val decLower = decodedName.lowercase()
                     existingFile = allLocalFiles.firstOrNull { f ->
-                        f.isFile && (f.name.startsWith("${picId}_") || f.name.contains(picId))
-                    }
-                }
-
-                // 3. Clean picture name match
-                if (existingFile == null && cleanPicName.isNotBlank() && cleanPicName != "Picture") {
-                    val allLocalFiles = (reviewImagesDir.listFiles() ?: emptyArray()) + (picturesDir.listFiles() ?: emptyArray())
-                    existingFile = allLocalFiles.firstOrNull { f ->
-                        f.isFile && (f.name.endsWith(cleanPicName) || f.name.contains(cleanPicName))
-                    }
-                }
-
-                if (existingFile != null) {
-                    mappedUrl = "file://${existingFile.absolutePath}"
-                } else if (originalUrl.contains("review_images/") || originalUrl.contains("pictures/")) {
-                    val candidate = File(reviewImagesDir, rawFilename)
-                    if (candidate.exists()) {
-                        mappedUrl = "file://${candidate.absolutePath}"
-                    } else {
-                        val candidatePic = File(picturesDir, rawFilename)
-                        if (candidatePic.exists()) {
-                            mappedUrl = "file://${candidatePic.absolutePath}"
-                        }
+                        val fn = f.name.lowercase()
+                        fn == rawLower || fn == decLower || fn.contains(rawLower) || rawLower.contains(fn)
                     }
                 }
             }
+
+            // 4. Lookup by picture name
+            if (existingFile == null && picName.isNotBlank() && picName != "Picture") {
+                val cleanPicName = picName.replace(Regex("[^a-zA-Z0-9._-]"), "_").lowercase()
+                existingFile = allLocalFiles.firstOrNull { f ->
+                    val fn = f.name.lowercase()
+                    fn == cleanPicName || fn.endsWith(cleanPicName) || fn.contains(cleanPicName)
+                }
+            }
+
+            // 5. Decode base64 dataUrl if available
+            if (existingFile == null && dataUrl.startsWith("data:image/")) {
+                try {
+                    val mime = dataUrl.substringAfter("data:image/").substringBefore(";").lowercase()
+                    val ext = if (mime.contains("png")) "png" else if (mime.contains("webp")) "webp" else "jpg"
+                    val b64 = dataUrl.substringAfter("base64,")
+                    val bytes = Base64.decode(b64, Base64.DEFAULT)
+                    val fn = "${if (picId.isNotBlank()) picId else UUID.randomUUID().toString().take(12)}.$ext"
+                    val f = File(reviewImagesDir, fn)
+                    f.writeBytes(bytes)
+                    try { f.copyTo(File(picturesDir, fn), overwrite = true) } catch (_: Exception) {}
+                    existingFile = f
+                } catch (_: Exception) {}
+            }
+
+            if (existingFile != null && existingFile.exists()) {
+                mappedUrl = "file://${existingFile.absolutePath}"
+            } else if (originalUrl.startsWith("https://local.review/review_images/")) {
+                mappedUrl = originalUrl
+            }
+
             val newObj = JSONObject().apply {
                 put("id", if (picId.isNotBlank()) picId else UUID.randomUUID().toString())
                 put("name", if (picName.isNotBlank()) picName else "Picture")
@@ -648,6 +701,224 @@ object BackupArchiveManager {
             newArr.put(newObj)
         }
         return newArr.toString()
+    }
+
+    private fun normalizeAndRemapReviewContent(
+        rawBody: String,
+        picsArr: JSONArray?,
+        reviewId: String,
+        context: Context
+    ): Pair<String, String> {
+        val reviewImagesDir = File(context.filesDir, "review_images")
+        if (!reviewImagesDir.exists()) reviewImagesDir.mkdirs()
+        val picturesDir = File(context.filesDir, "pictures")
+        if (!picturesDir.exists()) picturesDir.mkdirs()
+
+        val allLocalFiles = (reviewImagesDir.listFiles() ?: emptyArray()).toList() +
+                            (picturesDir.listFiles() ?: emptyArray()).toList()
+
+        fun findLocalFile(candidate: String?): File? {
+            if (candidate.isNullOrBlank()) return null
+            val clean = candidate.trim()
+            val cleanLower = clean.lowercase()
+            val decoded = try { URLDecoder.decode(clean, "UTF-8") } catch (_: Exception) { clean }
+            val decodedLower = decoded.lowercase()
+
+            val direct = File(reviewImagesDir, clean).takeIf { it.exists() && it.isFile }
+                ?: File(picturesDir, clean).takeIf { it.exists() && it.isFile }
+                ?: File(reviewImagesDir, decoded).takeIf { it.exists() && it.isFile }
+                ?: File(picturesDir, decoded).takeIf { it.exists() && it.isFile }
+            if (direct != null) return direct
+
+            return allLocalFiles.firstOrNull { f ->
+                val fName = f.name.lowercase()
+                val fNoExt = f.nameWithoutExtension.lowercase()
+                fName == cleanLower ||
+                fNoExt == cleanLower ||
+                fName == decodedLower ||
+                fNoExt == decodedLower ||
+                (cleanLower.length >= 3 && (fName.startsWith("${cleanLower}.") || fName.startsWith("${cleanLower}_"))) ||
+                (decodedLower.length >= 3 && (fName.startsWith("${decodedLower}.") || fName.startsWith("${decodedLower}_"))) ||
+                (cleanLower.length >= 4 && fName.contains(cleanLower)) ||
+                (decodedLower.length >= 4 && fName.contains(decodedLower))
+            }
+        }
+
+        val resolvedPictures = mutableListOf<JSONObject>()
+        val pictureMapById = mutableMapOf<String, String>()
+        val pictureMapByName = mutableMapOf<String, String>()
+
+        if (picsArr != null) {
+            for (j in 0 until picsArr.length()) {
+                val pObj = picsArr.getJSONObject(j)
+                val pId = pObj.optString("id", "").trim()
+                val pName = pObj.optString("name", "").trim()
+                val pUrl = pObj.optString("url", "").trim()
+                val pDataUrl = pObj.optString("dataUrl", "").trim()
+
+                var mappedUrl = pUrl
+                var localFile: File? = null
+
+                if (pId.isNotBlank()) {
+                    localFile = findLocalFile(pId)
+                }
+                if (localFile == null && pUrl.isNotBlank() && !pUrl.startsWith("blob:")) {
+                    val rawFn = pUrl.substringAfterLast('/').substringBefore('?')
+                    localFile = findLocalFile(rawFn)
+                }
+                if (localFile == null && pName.isNotBlank() && pName != "Picture") {
+                    localFile = findLocalFile(pName)
+                }
+                if (localFile == null && pDataUrl.startsWith("data:image/")) {
+                    try {
+                        val mime = pDataUrl.substringAfter("data:image/").substringBefore(";").lowercase()
+                        val ext = if (mime.contains("png")) "png" else if (mime.contains("webp")) "webp" else "jpg"
+                        val b64 = pDataUrl.substringAfter("base64,")
+                        val bytes = Base64.decode(b64, Base64.DEFAULT)
+                        val fn = "rev_${reviewId}_${if (pId.isNotBlank()) pId else UUID.randomUUID().toString().take(8)}.$ext"
+                        val f = File(reviewImagesDir, fn)
+                        f.writeBytes(bytes)
+                        try { f.copyTo(File(picturesDir, fn), overwrite = true) } catch (_: Exception) {}
+                        localFile = f
+                    } catch (_: Exception) {}
+                }
+
+                if (localFile != null && localFile.exists()) {
+                    mappedUrl = "file://${localFile.absolutePath}"
+                    val webUrl = "https://local.review/review_images/${localFile.name}"
+                    if (pId.isNotBlank()) pictureMapById[pId] = webUrl
+                    if (pName.isNotBlank()) pictureMapByName[pName] = webUrl
+                } else if (pUrl.startsWith("https://local.review/review_images/")) {
+                    if (pId.isNotBlank()) pictureMapById[pId] = pUrl
+                    if (pName.isNotBlank()) pictureMapByName[pName] = pUrl
+                }
+
+                resolvedPictures.add(JSONObject().apply {
+                    put("id", if (pId.isNotBlank()) pId else UUID.randomUUID().toString())
+                    put("name", if (pName.isNotBlank()) pName else "Picture")
+                    put("url", mappedUrl)
+                })
+            }
+        }
+
+        var body = rawBody.trim()
+
+        // 1. Unescape HTML entities if needed
+        if ((body.contains("&lt;h") || body.contains("&lt;p") || body.contains("&lt;div") || body.contains("&lt;img")) &&
+            !body.contains("<h") && !body.contains("<p")) {
+            body = body.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"")
+        }
+
+        // 2. Decode inline base64 images into local image files
+        val inlineBase64Regex = Regex("""<img\b([^>]*?)src=["']data:image\/([a-zA-Z0-9+]+);base64,([A-Za-z0-9+/=]+)["']([^>]*)>""", RegexOption.IGNORE_CASE)
+        var inlineIdx = 0
+        body = inlineBase64Regex.replace(body) { match ->
+            val prefix = match.groupValues[1]
+            val mimeExt = match.groupValues[2].lowercase().let { if (it.contains("png")) "png" else if (it.contains("webp")) "webp" else "jpg" }
+            val b64Data = match.groupValues[3]
+            val suffix = match.groupValues[4]
+            try {
+                val bytes = Base64.decode(b64Data, Base64.DEFAULT)
+                val fn = "rev_${reviewId}_inline_${inlineIdx++}.$mimeExt"
+                val f = File(reviewImagesDir, fn)
+                f.writeBytes(bytes)
+                try { f.copyTo(File(picturesDir, fn), overwrite = true) } catch (_: Exception) {}
+                resolvedPictures.add(JSONObject().apply {
+                    put("id", "inline_${fn.substringBeforeLast('.')}")
+                    put("name", "Review Photo $inlineIdx")
+                    put("url", "file://${f.absolutePath}")
+                })
+                "<img ${prefix}src=\"https://local.review/review_images/$fn\"$suffix>"
+            } catch (_: Exception) {
+                match.value
+            }
+        }
+
+        // 3. Convert markdown images ![alt](url) to HTML figures with normalized URLs
+        val markdownImgRegex = Regex("""!\[(.*?)\]\((.*?)\)""")
+        body = markdownImgRegex.replace(body) { match ->
+            val alt = match.groupValues[1].trim()
+            val urlOrPath = match.groupValues[2].trim()
+            val resolvedFile = findLocalFile(urlOrPath.substringAfterLast('/').substringBefore('?'))
+                ?: findLocalFile(urlOrPath)
+                ?: (if (alt.isNotBlank()) findLocalFile(alt) else null)
+            val finalUrl = when {
+                resolvedFile != null -> "https://local.review/review_images/${resolvedFile.name}"
+                urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://") -> urlOrPath
+                else -> "https://local.review/review_images/${urlOrPath.substringAfterLast('/')}"
+            }
+            val cleanAlt = alt.ifBlank { "Review Photo" }
+            if (resolvedFile != null && resolvedPictures.none { it.optString("url").contains(resolvedFile.name) }) {
+                resolvedPictures.add(JSONObject().apply {
+                    put("id", resolvedFile.nameWithoutExtension)
+                    put("name", cleanAlt)
+                    put("url", "file://${resolvedFile.absolutePath}")
+                })
+            }
+            "<figure class=\"review-figure\"><img src=\"$finalUrl\" alt=\"$cleanAlt\" loading=\"lazy\" /><figcaption class=\"review-caption\">$cleanAlt</figcaption></figure>"
+        }
+
+        // 4. Normalize all <img> tags in HTML
+        val imgTagRegex = Regex("""<img\b([^>]*)>""", RegexOption.IGNORE_CASE)
+        body = imgTagRegex.replace(body) { match ->
+            val attrs = match.groupValues[1]
+            val srcMatch = Regex("""src=["']([^"']*)["']""", RegexOption.IGNORE_CASE).find(attrs)
+            val attIdMatch = Regex("""(?:data-attachment-id|dataAttachmentId|data-attachment-token)=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(attrs)
+            val altMatch = Regex("""alt=["']([^"']*)["']""", RegexOption.IGNORE_CASE).find(attrs)
+
+            val rawSrc = srcMatch?.groupValues?.get(1)?.trim() ?: ""
+            val attId = attIdMatch?.groupValues?.get(1)?.trim() ?: ""
+            val alt = altMatch?.groupValues?.get(1)?.trim() ?: ""
+
+            var resolvedFile: File? = null
+            if (attId.isNotBlank()) {
+                resolvedFile = findLocalFile(attId)
+            }
+            if (resolvedFile == null && rawSrc.isNotBlank() && !rawSrc.startsWith("blob:") && !rawSrc.startsWith("data:")) {
+                val fn = rawSrc.substringAfterLast('/').substringBefore('?')
+                resolvedFile = findLocalFile(fn)
+            }
+            if (resolvedFile == null && alt.isNotBlank()) {
+                resolvedFile = findLocalFile(alt)
+            }
+
+            val targetUrl = when {
+                resolvedFile != null -> "https://local.review/review_images/${resolvedFile.name}"
+                attId.isNotBlank() && pictureMapById.containsKey(attId) -> pictureMapById[attId]!!
+                alt.isNotBlank() && pictureMapByName.containsKey(alt) -> pictureMapByName[alt]!!
+                rawSrc.startsWith("https://local.review/") -> rawSrc
+                rawSrc.startsWith("http://") || rawSrc.startsWith("https://") -> rawSrc
+                attId.isNotBlank() -> "https://local.review/review_images/$attId"
+                rawSrc.isNotBlank() && !rawSrc.startsWith("blob:") -> "https://local.review/review_images/${rawSrc.substringAfterLast('/')}"
+                else -> ""
+            }
+
+            if (resolvedFile != null && resolvedPictures.none { it.optString("url").contains(resolvedFile.name) }) {
+                resolvedPictures.add(JSONObject().apply {
+                    put("id", attId.ifBlank { resolvedFile.nameWithoutExtension })
+                    put("name", alt.ifBlank { resolvedFile.name })
+                    put("url", "file://${resolvedFile.absolutePath}")
+                })
+            }
+
+            if (targetUrl.isNotBlank()) {
+                var newAttrs = attrs
+                if (srcMatch != null) {
+                    newAttrs = newAttrs.replace(srcMatch.value, "src=\"$targetUrl\"")
+                } else {
+                    newAttrs = "$newAttrs src=\"$targetUrl\""
+                }
+                "<img$newAttrs>"
+            } else {
+                match.value
+            }
+        }
+
+        val finalPicturesJson = JSONArray().apply {
+            resolvedPictures.forEach { put(it) }
+        }.toString()
+
+        return Pair(body, finalPicturesJson)
     }
 
     private suspend fun parseAndInsertDatabaseJson(
@@ -703,56 +974,38 @@ object BackupArchiveManager {
                             details = s.getString("details"),
                             unit = if (s.has("unit") && !s.isNull("unit") && s.getString("unit").isNotBlank()) s.getString("unit") else null,
                             orderIndex = s.optInt("order", i),
-                            picturesJson = remapPictureArray(picsArr, context)
+                            picturesJson = remapPictureArray(picsArr, context),
+                            isNumeric = if (s.has("isNumeric") && !s.isNull("isNumeric")) s.getBoolean("isNumeric") else null
                         )
                     )
                 }
             }
 
-            // Parse Reviews
+            // Parse Reviews with thorough media restoration
             val reviewsList = mutableListOf<ReviewEntity>()
             val revsArr = root.optJSONArray("reviews")
             if (revsArr != null) {
                 for (i in 0 until revsArr.length()) {
                     val r = revsArr.getJSONObject(i)
+                    val reviewId = r.getString("id")
                     val pids = r.optJSONArray("productIds")
                     val ptitles = r.optJSONArray("productTitles")
                     val pics = r.optJSONArray("pictures")
+                    val rawBody = r.optString("body", "")
 
-                    var body = r.getString("body")
-                    // Remap any old file:///... paths in HTML src attributes
-                    val oldFileSrcRegex = Regex("""src=["']file:/*([^"']+)["']""", RegexOption.IGNORE_CASE)
-                    body = oldFileSrcRegex.replace(body) { match ->
-                        val filename = match.groupValues[1].substringAfterLast('/')
-                        "src=\"https://local.review/review_images/$filename\""
-                    }
-                    val oldDataSrcRegex = Regex("""src=["']\/data\/[^"']*\/review_images\/([^"']+)["']""", RegexOption.IGNORE_CASE)
-                    body = oldDataSrcRegex.replace(body) { match ->
-                        val filename = match.groupValues[1]
-                        "src=\"https://local.review/review_images/$filename\""
-                    }
-                    val oldPicturesDataSrcRegex = Regex("""src=["']\/data\/[^"']*\/pictures\/([^"']+)["']""", RegexOption.IGNORE_CASE)
-                    body = oldPicturesDataSrcRegex.replace(body) { match ->
-                        val filename = match.groupValues[1]
-                        "src=\"https://local.review/review_images/$filename\""
-                    }
-                    val relativeImgRegex = Regex("""src=["'](?:review_images|pictures)\/([^"']+)["']""", RegexOption.IGNORE_CASE)
-                    body = relativeImgRegex.replace(body) { match ->
-                        val filename = match.groupValues[1]
-                        "src=\"https://local.review/review_images/$filename\""
-                    }
+                    val (normalizedBody, picturesJson) = normalizeAndRemapReviewContent(rawBody, pics, reviewId, context)
 
                     reviewsList.add(
                         ReviewEntity(
-                            id = r.getString("id"),
+                            id = reviewId,
                             reviewNumber = r.optInt("reviewNumber", i + 1),
                             title = r.optString("title", ""),
-                            body = body,
+                            body = normalizedBody,
                             authorName = r.optString("authorName", "Verified Reviewer"),
                             rating = r.optInt("rating", 5),
                             productIdsJson = pids?.toString() ?: "[]",
                             productTitlesJson = ptitles?.toString() ?: "[]",
-                            picturesJson = remapPictureArray(pics, context),
+                            picturesJson = picturesJson,
                             createdTime = r.optString("createdTime", "")
                         )
                     )

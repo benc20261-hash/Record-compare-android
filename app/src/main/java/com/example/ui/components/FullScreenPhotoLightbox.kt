@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -35,6 +36,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
+import coil.size.Precision
+import coil.size.Size
 import com.example.model.PictureItem
 import com.example.model.resolveImageModel
 
@@ -76,10 +81,30 @@ fun FullScreenPhotoLightbox(
                 .fillMaxSize()
                 .background(Color(0xFF0F172A))
         ) {
-            // Main Image with Zoom and Pan gestures
+            // Main Image with Double-Tap Zoom and Pinch/Pan gestures
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .pointerInput(currentIndex) {
+                        detectTapGestures(
+                            onDoubleTap = { tapOffset ->
+                                if (scale > 1.2f) {
+                                    scale = 1f
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                } else {
+                                    val targetScale = 2.5f
+                                    val centerX = size.width / 2f
+                                    val centerY = size.height / 2f
+                                    val maxOffsetX = (size.width * (targetScale - 1)) / 2
+                                    val maxOffsetY = (size.height * (targetScale - 1)) / 2
+                                    offsetX = ((centerX - tapOffset.x) * (targetScale - 1)).coerceIn(-maxOffsetX, maxOffsetX)
+                                    offsetY = ((centerY - tapOffset.y) * (targetScale - 1)).coerceIn(-maxOffsetY, maxOffsetY)
+                                    scale = targetScale
+                                }
+                            }
+                        )
+                    }
                     .pointerInput(currentIndex) {
                         detectTransformGestures { _, pan, zoom, _ ->
                             scale = (scale * zoom).coerceIn(1f, 5f)
@@ -96,10 +121,27 @@ fun FullScreenPhotoLightbox(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = resolveImageModel(context, currentImage.url),
+                var isImageLoading by remember(currentIndex) { mutableStateOf(true) }
+
+                val fullResModel = remember(currentImage.url, currentImage.id) {
+                    resolveImageModel(context, currentImage.url, currentImage.name.ifBlank { null })
+                }
+
+                val imageRequest = remember(fullResModel, context) {
+                    ImageRequest.Builder(context)
+                        .data(fullResModel)
+                        .size(Size.ORIGINAL) // True 100% full original un-downsampled resolution!
+                        .precision(Precision.EXACT)
+                        .crossfade(true)
+                        .build()
+                }
+
+                SubcomposeAsyncImage(
+                    model = imageRequest,
                     contentDescription = currentImage.name,
                     contentScale = ContentScale.Fit,
+                    onSuccess = { isImageLoading = false },
+                    onError = { isImageLoading = false },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp, vertical = 80.dp)
@@ -110,6 +152,14 @@ fun FullScreenPhotoLightbox(
                             translationY = offsetY
                         )
                 )
+
+                if (isImageLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(36.dp),
+                        color = Color(0xFF6366F1),
+                        strokeWidth = 3.dp
+                    )
+                }
             }
 
             // Navigation Arrow: Left (<)
@@ -163,7 +213,7 @@ fun FullScreenPhotoLightbox(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Title and Counter
+                // Title, Counter, and Full Res Badge
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -189,6 +239,21 @@ fun FullScreenPhotoLightbox(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
+
+                    // Full Resolution Badge
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1E1B4B),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6366F1))
+                    ) {
+                        Text(
+                            text = "Full Res",
+                            color = Color(0xFFA5B4FC),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                        )
+                    }
                 }
 
                 // Controls: Zoom Out, Zoom Level, Zoom In, Save, and Red Close Button
@@ -209,12 +274,20 @@ fun FullScreenPhotoLightbox(
                         )
                     }
 
-                    // Zoom percentage
+                    // Zoom percentage (clickable to quickly reset to 100%)
                     Text(
                         text = "${(scale * 100).toInt()}%",
-                        color = Color(0xFF94A3B8),
+                        color = if (scale > 1f) Color(0xFFA5B4FC) else Color(0xFF94A3B8),
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable {
+                                scale = 1f
+                                offsetX = 0f
+                                offsetY = 0f
+                            }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
                     )
 
                     // Zoom In

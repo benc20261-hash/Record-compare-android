@@ -47,7 +47,6 @@ class MainActivity : ComponentActivity() {
             val webViewCacheDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache")
             java.io.File(webViewCacheDir, "js").mkdirs()
             java.io.File(webViewCacheDir, "wasm").mkdirs()
-            android.webkit.WebView.enableSlowWholeDocumentDraw()
         } catch (_: Exception) {}
         handleIncomingShareIntent(intent)
         setContent {
@@ -116,6 +115,7 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
     val isAddProductDialogOpen by viewModel.isAddProductDialogOpen.collectAsStateWithLifecycle()
     val isAddSpecDialogOpen by viewModel.isAddSpecDialogOpen.collectAsStateWithLifecycle()
     val isAddReviewDialogOpen by viewModel.isAddReviewDialogOpen.collectAsStateWithLifecycle()
+    val addReviewDialogState by viewModel.addReviewDialogState.collectAsStateWithLifecycle()
     val selectedReviewForEdit by viewModel.selectedReviewForEdit.collectAsStateWithLifecycle()
 
     val bannerMessage by viewModel.bannerMessage.collectAsStateWithLifecycle()
@@ -135,170 +135,27 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isDesktopMode = maxWidth >= 720.dp
 
-        if (isDesktopMode) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFFF8FAFC))
-            ) {
-                // Desktop Left Sidebar
-                DesktopSidebar(
-                    activeTab = activeTab,
-                    onTabSelected = { viewModel.setActiveTab(it) },
-                    productCount = products.size,
-                    compareCount = comparedProductIds.size,
-                    reviewCount = reviews.size,
-                    onAddProductClick = { viewModel.setActiveTab(AppNavTab.ADD_PRODUCT) },
-                    onSmartAddClick = { viewModel.setActiveTab(AppNavTab.SMART_ADD) },
-                    onSyncClick = { showSyncModal = true }
-                )
-
-                // Right Main Area
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                ) {
-                    // Desktop Top Header Bar
-                    Surface(
-                        color = Color.White,
-                        tonalElevation = 1.dp,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                        modifier = Modifier.fillMaxWidth()
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = com.example.ui.theme.AppColors.CanvasBackground,
+            topBar = {
+                if (isDesktopMode) {
+                    DesktopNavbar(
+                        activeTab = activeTab,
+                        onTabSelected = { viewModel.setActiveTab(it) },
+                        productCount = products.size,
+                        compareCount = comparedProductIds.size,
+                        reviewCount = reviews.size,
+                        onAddProductClick = { viewModel.openAddProductDialog(true) },
+                        onSyncClick = { showSyncModal = true }
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .background(Color.White)
+                            .statusBarsPadding()
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .statusBarsPadding()
-                                .padding(horizontal = 20.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Text(
-                                    text = when (activeTab) {
-                                        AppNavTab.CATALOG -> "Device Catalog"
-                                        AppNavTab.COMPARE -> "Product Comparison Matrix"
-                                        AppNavTab.SMART_ADD -> "Smart AI Importer"
-                                        AppNavTab.ADD_PRODUCT -> "Product Workspace"
-                                        AppNavTab.REVIEWS -> "Community Reviews & Benchmarks"
-                                        AppNavTab.DATA_BACKUP -> "Data Backup & Restore"
-                                    },
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF0F172A)
-                                )
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = Color(0xFFEEF2FF)
-                                ) {
-                                    Text(
-                                        text = "${products.size} Products Active",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF4F46E5),
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                    )
-                                }
-                            }
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                if (comparedProductIds.isNotEmpty()) {
-                                    OutlinedButton(
-                                        onClick = { viewModel.setActiveTab(AppNavTab.COMPARE) },
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(
-                                            containerColor = Color(0xFFEFF6FF),
-                                            contentColor = Color(0xFF1D4ED8)
-                                        ),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
-                                        modifier = Modifier.height(34.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.CompareArrows,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(
-                                            "Compare (${comparedProductIds.size})",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-
-                                IconButton(
-                                    onClick = { showSyncModal = true },
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.CloudSync,
-                                        contentDescription = "Sync",
-                                        tint = Color(0xFF4F46E5),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Content Area
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        ActiveTabContent(
-                            activeTab = activeTab,
-                            viewModel = viewModel,
-                            products = products,
-                            specifications = specifications,
-                            reviews = reviews,
-                            allTags = allTags,
-                            searchQuery = searchQuery,
-                            comparedProductIds = comparedProductIds,
-                            isBackupProcessing = isBackupProcessing,
-                            backupProgressText = backupProgressText,
-                            lastExportedZipFile = lastExportedZipFile,
-                            lastSavedPublicLocation = lastSavedPublicLocation,
-                            context = context
-                        )
-
-                        // Status Banner Overlay
-                        if (bannerMessage != null) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFF0F172A),
-                                shadowElevation = 8.dp,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .padding(top = 12.dp)
-                            ) {
-                                Text(
-                                    text = bannerMessage!!,
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            Scaffold(
-                modifier = Modifier.fillMaxSize(),
-        topBar = {
-            Column(
-                modifier = Modifier
-                    .background(Color.White)
-                    .statusBarsPadding()
-            ) {
-                // Top App Bar Header with Logo & Live Badge (Catalog module.PNG / Compare module.PNG)
+                        // Top App Bar Header with Logo & Live Badge (Catalog module.PNG / Compare module.PNG)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -347,8 +204,10 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
                     // Top Action Icons
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+
+
                         IconButton(
                             onClick = { showSyncModal = true },
                             modifier = Modifier.size(36.dp).testTag("nav_sync_btn")
@@ -553,98 +412,111 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
                 }
 
                 HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+                    }
+                }
+            },
+            bottomBar = {
+                if (!isDesktopMode) {
+                    NavigationBar(
+                        containerColor = Color.White,
+                        tonalElevation = 8.dp
+                    ) {
+                        NavBarItem(
+                            label = "Catalog",
+                            icon = Icons.Default.GridView,
+                            selected = activeTab == AppNavTab.CATALOG,
+                            badgeCount = products.size,
+                            onClick = { viewModel.setActiveTab(AppNavTab.CATALOG) },
+                            testTag = "nav_tab_catalog"
+                        )
+                        NavBarItem(
+                            label = "Compare",
+                            icon = Icons.Default.CompareArrows,
+                            selected = activeTab == AppNavTab.COMPARE,
+                            badgeCount = if (comparedProductIds.isNotEmpty()) comparedProductIds.size else null,
+                            onClick = { viewModel.setActiveTab(AppNavTab.COMPARE) },
+                            testTag = "nav_tab_compare"
+                        )
+                        NavBarItem(
+                            label = "Smart Add",
+                            icon = Icons.Default.AutoAwesome,
+                            selected = activeTab == AppNavTab.SMART_ADD,
+                            onClick = { viewModel.setActiveTab(AppNavTab.SMART_ADD) },
+                            testTag = "nav_tab_smart_add"
+                        )
+                        NavBarItem(
+                            label = "Reviews",
+                            icon = Icons.Default.RateReview,
+                            selected = activeTab == AppNavTab.REVIEWS,
+                            badgeCount = if (reviews.isNotEmpty()) reviews.size else null,
+                            onClick = { viewModel.setActiveTab(AppNavTab.REVIEWS) },
+                            testTag = "nav_tab_reviews"
+                        )
+                        NavBarItem(
+                            label = "Backup",
+                            icon = Icons.Default.Storage,
+                            selected = activeTab == AppNavTab.DATA_BACKUP,
+                            onClick = { viewModel.setActiveTab(AppNavTab.DATA_BACKUP) },
+                            testTag = "nav_tab_backup"
+                        )
+                    }
+                }
             }
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = Color.White,
-                tonalElevation = 8.dp
-            ) {
-                NavBarItem(
-                    label = "Catalog",
-                    icon = Icons.Default.GridView,
-                    selected = activeTab == AppNavTab.CATALOG,
-                    badgeCount = products.size,
-                    onClick = { viewModel.setActiveTab(AppNavTab.CATALOG) },
-                    testTag = "nav_tab_catalog"
-                )
-                NavBarItem(
-                    label = "Compare",
-                    icon = Icons.Default.CompareArrows,
-                    selected = activeTab == AppNavTab.COMPARE,
-                    badgeCount = if (comparedProductIds.isNotEmpty()) comparedProductIds.size else null,
-                    onClick = { viewModel.setActiveTab(AppNavTab.COMPARE) },
-                    testTag = "nav_tab_compare"
-                )
-                NavBarItem(
-                    label = "Smart Add",
-                    icon = Icons.Default.AutoAwesome,
-                    selected = activeTab == AppNavTab.SMART_ADD,
-                    onClick = { viewModel.setActiveTab(AppNavTab.SMART_ADD) },
-                    testTag = "nav_tab_smart_add"
-                )
-                NavBarItem(
-                    label = "Reviews",
-                    icon = Icons.Default.RateReview,
-                    selected = activeTab == AppNavTab.REVIEWS,
-                    badgeCount = if (reviews.isNotEmpty()) reviews.size else null,
-                    onClick = { viewModel.setActiveTab(AppNavTab.REVIEWS) },
-                    testTag = "nav_tab_reviews"
-                )
-                NavBarItem(
-                    label = "Backup",
-                    icon = Icons.Default.Storage,
-                    selected = activeTab == AppNavTab.DATA_BACKUP,
-                    onClick = { viewModel.setActiveTab(AppNavTab.DATA_BACKUP) },
-                    testTag = "nav_tab_backup"
-                )
-            }
-        }
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color(0xFFF8FAFC))
+                .background(com.example.ui.theme.AppColors.CanvasBackground),
+            contentAlignment = Alignment.TopCenter
         ) {
-            ActiveTabContent(
-                activeTab = activeTab,
-                viewModel = viewModel,
-                products = products,
-                specifications = specifications,
-                reviews = reviews,
-                allTags = allTags,
-                searchQuery = searchQuery,
-                comparedProductIds = comparedProductIds,
-                isBackupProcessing = isBackupProcessing,
-                backupProgressText = backupProgressText,
-                lastExportedZipFile = lastExportedZipFile,
-                lastSavedPublicLocation = lastSavedPublicLocation,
-                context = context
-            )
-
-            // Status Banner Overlay
-            if (bannerMessage != null) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF0F172A),
-                    shadowElevation = 8.dp,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 12.dp)
-                ) {
-                    Text(
-                        text = bannerMessage!!,
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 1200.dp)
+                    .windowInsetsPadding(
+                        if (isDesktopMode) WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+                        else WindowInsets(0, 0, 0, 0)
                     )
+            ) {
+                ActiveTabContent(
+                    activeTab = activeTab,
+                    viewModel = viewModel,
+                    products = products,
+                    specifications = specifications,
+                    reviews = reviews,
+                    allTags = allTags,
+                    searchQuery = searchQuery,
+                    comparedProductIds = comparedProductIds,
+                    isBackupProcessing = isBackupProcessing,
+                    backupProgressText = backupProgressText,
+                    lastExportedZipFile = lastExportedZipFile,
+                    lastSavedPublicLocation = lastSavedPublicLocation,
+                    context = context
+                )
+
+                // Status Banner Overlay
+                if (bannerMessage != null) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF0F172A),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 12.dp)
+                    ) {
+                        Text(
+                            text = bannerMessage!!,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
                 }
             }
         }
     }
-}
 }
 
     // Modals
@@ -664,6 +536,8 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
             onAddSpec = { viewModel.openAddSpecDialog(prod) },
             onAddReview = { viewModel.openAddReviewDialog(prod) },
             onReviewClick = { viewModel.showReviewDetail(it) },
+            onDeleteSpec = { spec -> viewModel.deleteSpecification(spec.id) },
+            onSaveSpec = { spec -> viewModel.saveSpecification(spec) },
             onDismiss = { viewModel.showProductDetail(null) }
         )
     }
@@ -703,8 +577,8 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
     isAddSpecDialogOpen?.let { prod ->
         AddSpecModal(
             product = prod,
-            onAdd = { prodId, title, specName, details, unit ->
-                viewModel.addSpecification(prodId, title, specName, details, unit)
+            onAdd = { prodId, title, specName, details, unit, isNumeric ->
+                viewModel.addSpecification(prodId, title, specName, details, unit, isNumeric)
             },
             onDismiss = { viewModel.openAddSpecDialog(null) }
         )
@@ -740,16 +614,16 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
         )
     }
 
-    isAddReviewDialogOpen?.let { preselected ->
+    addReviewDialogState?.let { state ->
         RichReviewEditor(
             products = products,
             initialReview = null,
-            preselectedProduct = preselected,
+            preselectedProduct = state.preselectedProduct ?: products.firstOrNull(),
             onSaveReview = { newRev ->
                 viewModel.saveReview(newRev)
-                viewModel.openAddReviewDialog(null)
+                viewModel.closeAddReviewDialog()
             },
-            onDismiss = { viewModel.openAddReviewDialog(null) }
+            onDismiss = { viewModel.closeAddReviewDialog() }
         )
     }
 

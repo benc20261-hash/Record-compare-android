@@ -33,13 +33,23 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import com.example.model.PictureItem
 import com.example.model.ProductItem
 import com.example.model.SpecificationItem
+import com.example.ui.components.AppSummaryCard
 import com.example.model.resolveImageModel
+import com.example.ui.components.ButtonText
+import com.example.ui.components.DeleteConfirmDialog
 import com.example.ui.components.DeviceGraphicPlaceholder
+import com.example.ui.components.FormattedSpecHtml
+import com.example.ui.components.HtmlWysiwygEditor
+import com.example.ui.components.SpecUnitBadge
 import com.example.ui.components.SpecificationsOrderModal
 import com.example.ui.components.TagBrandProductFilter
+import com.example.util.computeHierarchicalSpecOrder
+import com.example.util.buildInheritedBlankSpecs
 import androidx.compose.foundation.lazy.rememberLazyListState
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -67,40 +77,28 @@ fun SmartAddProductScreen(
     var selectedCategoryFilter by remember { mutableStateOf("All") }
     var slotPickerIndex by remember { mutableStateOf<Int?>(null) }
     var isTagDropdownOpen by remember { mutableStateOf(false) }
+    var slotToRemoveIndex by remember { mutableStateOf<Int?>(null) }
+    var showResetSlotsConfirm by remember { mutableStateOf(false) }
+    var specToDeleteInline by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     // Slots tracking (Screenshot 2.png)
+    // Slots tracking (Screenshot 2.png) - Single reactive source of truth
     val productSlots = remember {
         val list = mutableStateListOf<String?>()
         if (comparedIds.isNotEmpty()) {
             comparedIds.forEach { list.add(it) }
+            if (comparedIds.size == 1) list.add(null)
+        } else if (products.size >= 2) {
+            list.add(products[0].id)
+            list.add(products[1].id)
         } else if (products.isNotEmpty()) {
-            list.add(products.first().id)
+            list.add(products[0].id)
             list.add(null)
         } else {
             list.add(null)
             list.add(null)
         }
         list
-    }
-
-    // Multi-selected product IDs in this workspace (initialized from comparedIds or slots)
-    val selectedProductIds = remember {
-        val list = mutableStateListOf<String>()
-        if (comparedIds.isNotEmpty()) {
-            list.addAll(comparedIds)
-        } else if (products.isNotEmpty()) {
-            list.addAll(products.take(2).map { it.id })
-        }
-        list
-    }
-
-    // Keep selectedProductIds in sync with filled productSlots
-    LaunchedEffect(productSlots.toList()) {
-        val active = productSlots.filterNotNull()
-        if (active != selectedProductIds.toList()) {
-            selectedProductIds.clear()
-            selectedProductIds.addAll(active)
-        }
     }
 
     // Newly created products tracking (for (New) label & amber New badge)
@@ -159,17 +157,16 @@ fun SmartAddProductScreen(
         }
     }
 
-    // Selected products reactive directly from selectedProductIds snapshot state
-    val selectedProducts = selectedProductIds.mapNotNull { id ->
-        allAvailableProducts.find { it.id == id }
+    // Selected products reactive directly from productSlots snapshot state
+    val selectedProducts = remember(productSlots.toList(), allAvailableProducts) {
+        productSlots.filterNotNull().mapNotNull { id ->
+            allAvailableProducts.find { it.id == id }
+        }
     }
 
-    // Specifications belonging to the selected products
-    val matrixSpecs = remember(selectedProductIds.toList(), specifications) {
-        val distinctSpecNames = linkedSetOf<String>()
-        specifications.filter { it.productId in selectedProductIds }
-            .forEach { distinctSpecNames.add(it.specName) }
-        distinctSpecNames.toList()
+    // Specifications belonging to the selected products following slot hierarchy
+    val matrixSpecs = remember(selectedProducts, specifications) {
+        computeHierarchicalSpecOrder(selectedProducts, specifications)
     }
 
     val listState = rememberLazyListState()
@@ -218,8 +215,8 @@ fun SmartAddProductScreen(
         state = listState,
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFF8FAFC)),
-        contentPadding = PaddingValues(16.dp),
+            .background(com.example.ui.theme.AppColors.CanvasBackground),
+        contentPadding = com.example.ui.theme.AppSpacing.ScreenContentPaddingScrollable,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // =================================================================
@@ -274,10 +271,7 @@ fun SmartAddProductScreen(
                             OutlinedButton(
                                 onClick = {
                                     if (productSlots.size > 2) {
-                                        productSlots.removeAt(productSlots.size - 1)
-                                        if (slotPickerIndex != null && slotPickerIndex!! >= productSlots.size) {
-                                            slotPickerIndex = null
-                                        }
+                                        slotToRemoveIndex = productSlots.size - 1
                                     }
                                 },
                                 shape = RoundedCornerShape(12.dp),
@@ -363,20 +357,24 @@ fun SmartAddProductScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f, fill = false)
                         ) {
                             Text(
-                                text = "Product slot ${index + 1}",
+                                text = "Slot ${index + 1} of ${productSlots.size}",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1E293B)
+                                color = Color(0xFF1E293B),
+                                maxLines = 1,
+                                softWrap = false
                             )
 
                             if (slotProduct != null) {
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = Color(0xFFECFDF5),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0)),
+                                    modifier = Modifier.horizontalScroll(rememberScrollState())
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
@@ -390,7 +388,7 @@ fun SmartAddProductScreen(
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF047857),
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            softWrap = false
                                         )
                                     }
                                 }
@@ -404,6 +402,8 @@ fun SmartAddProductScreen(
                                         fontSize = 11.sp,
                                         color = Color(0xFF64748B),
                                         fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        softWrap = false,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                     )
                                 }
@@ -432,14 +432,7 @@ fun SmartAddProductScreen(
                                 }
 
                                 IconButton(
-                                    onClick = {
-                                        if (productSlots.size > 2) {
-                                            productSlots.removeAt(index)
-                                            if (slotPickerIndex == index) slotPickerIndex = null
-                                        } else {
-                                            productSlots[index] = null
-                                        }
-                                    },
+                                    onClick = { slotToRemoveIndex = index },
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
@@ -452,10 +445,7 @@ fun SmartAddProductScreen(
                             } else {
                                 if (productSlots.size > 2) {
                                     IconButton(
-                                        onClick = {
-                                            productSlots.removeAt(index)
-                                            if (slotPickerIndex == index) slotPickerIndex = null
-                                        },
+                                        onClick = { slotToRemoveIndex = index },
                                         modifier = Modifier.size(32.dp)
                                     ) {
                                         Icon(
@@ -491,13 +481,25 @@ fun SmartAddProductScreen(
                                     modifier = Modifier.size(46.dp)
                                 ) {
                                     val firstPic = slotProduct.pictures.firstOrNull()?.url
-                                    if (!firstPic.isNullOrBlank()) {
-                                        val context = LocalContext.current
-                                        AsyncImage(
-                                            model = resolveImageModel(context, firstPic),
+                                    val firstPicName = slotProduct.pictures.firstOrNull()?.name
+                                    val context = LocalContext.current
+                                    if (!firstPic.isNullOrBlank() || !firstPicName.isNullOrBlank()) {
+                                        SubcomposeAsyncImage(
+                                            model = ImageRequest.Builder(context)
+                                                .data(resolveImageModel(context, firstPic ?: "", preferredName = firstPicName))
+                                                .crossfade(true)
+                                                .build(),
                                             contentDescription = slotProduct.name,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
+                                            contentScale = ContentScale.Fit,
+                                            error = {
+                                                DeviceGraphicPlaceholder(
+                                                    title = slotProduct.name,
+                                                    brand = slotProduct.brand,
+                                                    tags = slotProduct.tags,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            },
+                                            modifier = Modifier.fillMaxSize().padding(2.dp)
                                         )
                                     } else {
                                         DeviceGraphicPlaceholder(
@@ -514,6 +516,9 @@ fun SmartAddProductScreen(
                                     verticalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
@@ -523,7 +528,7 @@ fun SmartAddProductScreen(
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF0F172A),
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            softWrap = false
                                         )
                                         Surface(
                                             shape = RoundedCornerShape(8.dp),
@@ -534,16 +539,27 @@ fun SmartAddProductScreen(
                                                 color = Color(0xFF92400E),
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
                                     }
 
-                                    Text(
-                                        text = "${if (slotProduct.brand.isNotBlank()) slotProduct.brand else "No brand"} • ${productSpecs.size} specifications",
-                                        fontSize = 12.sp,
-                                        color = Color(0xFF64748B)
-                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${if (slotProduct.brand.isNotBlank()) slotProduct.brand else "No brand"} • ${productSpecs.size} specifications",
+                                            fontSize = 12.sp,
+                                            color = Color(0xFF64748B),
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
                                 }
 
                                 OutlinedButton(
@@ -725,13 +741,25 @@ fun SmartAddProductScreen(
                                                         modifier = Modifier.size(36.dp)
                                                     ) {
                                                         val pPic = itemProduct.pictures.firstOrNull()?.url
-                                                        if (!pPic.isNullOrBlank()) {
-                                                            val context = LocalContext.current
-                                                            AsyncImage(
-                                                                model = resolveImageModel(context, pPic),
+                                                        val pPicName = itemProduct.pictures.firstOrNull()?.name
+                                                        val context = LocalContext.current
+                                                        if (!pPic.isNullOrBlank() || !pPicName.isNullOrBlank()) {
+                                                            SubcomposeAsyncImage(
+                                                                model = ImageRequest.Builder(context)
+                                                                    .data(resolveImageModel(context, pPic ?: "", preferredName = pPicName))
+                                                                    .crossfade(true)
+                                                                    .build(),
                                                                 contentDescription = itemProduct.name,
-                                                                contentScale = ContentScale.Crop,
-                                                                modifier = Modifier.fillMaxSize()
+                                                                contentScale = ContentScale.Fit,
+                                                                error = {
+                                                                    DeviceGraphicPlaceholder(
+                                                                        title = itemProduct.name,
+                                                                        brand = itemProduct.brand,
+                                                                        tags = itemProduct.tags,
+                                                                        modifier = Modifier.fillMaxSize()
+                                                                    )
+                                                                },
+                                                                modifier = Modifier.fillMaxSize().padding(1.dp)
                                                             )
                                                         } else {
                                                             DeviceGraphicPlaceholder(
@@ -781,79 +809,20 @@ fun SmartAddProductScreen(
         // 3. SLOTS SUMMARY AND JUMP BAR
         // =================================================================
         item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "${filledSlotsCount} of ${productSlots.size} slots filled",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1E293B)
-                        )
-                        Text("•", fontSize = 12.sp, color = Color(0xFF94A3B8))
-                        Text(
-                            text = "${matrixSpecs.size} differences detected",
-                            fontSize = 12.sp,
-                            color = Color(0xFF64748B)
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(
-                            onClick = {
-                                productSlots.clear()
-                                productSlots.addAll(listOf(null, null))
-                                slotPickerIndex = null
-                            },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                "Reset slots",
-                                fontSize = 12.sp,
-                                color = Color(0xFFEF4444),
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                coroutineScope.launch {
-                                    listState.animateScrollToItem(productSlots.size + 2)
-                                }
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0F172A),
-                                contentColor = Color.White
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                "⇋ Go to matrix",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+            AppSummaryCard(
+                statsText = "${filledSlotsCount} of ${productSlots.size} slots filled",
+                secondaryText = "${matrixSpecs.size} differences detected",
+                onReset = { showResetSlotsConfirm = true },
+                resetLabel = "Reset slots",
+                actionButtonText = if (filledSlotsCount >= 2) "Go to matrix (${matrixSpecs.size} differences)" else null,
+                onActionClick = if (filledSlotsCount >= 2) {
+                    {
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(productSlots.size + 3)
                         }
                     }
-                }
-            }
+                } else null
+            )
         }
 
         // =================================================================
@@ -861,7 +830,6 @@ fun SmartAddProductScreen(
         // =================================================================
         if (selectedProducts.isNotEmpty()) {
             item {
-                Spacer(Modifier.height(12.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text = "SELECTED PRODUCTS",
@@ -981,9 +949,11 @@ fun SmartAddProductScreen(
                                         createdTime = System.currentTimeMillis().toString()
                                     )
                                     localNewProducts.add(tempProd)
-                                    newlyCreatedIds.add(newId)
-                                    if (!selectedProductIds.contains(newId)) {
-                                        selectedProductIds.add(newId)
+                                    val emptyIdx = productSlots.indexOfFirst { it == null }
+                                    if (emptyIdx != -1) {
+                                        productSlots[emptyIdx] = newId
+                                    } else {
+                                        productSlots.add(newId)
                                     }
                                     targetProductForSpecId = newId
                                     newProductName = ""
@@ -1215,6 +1185,9 @@ fun SmartAddProductScreen(
 
                                     Column(modifier = Modifier.weight(1f)) {
                                         Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
@@ -1222,7 +1195,9 @@ fun SmartAddProductScreen(
                                                 product.name,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 14.sp,
-                                                color = Color(0xFF0F172A)
+                                                color = Color(0xFF0F172A),
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                             if (product.id in newlyCreatedIds) {
                                                 Surface(
@@ -1234,6 +1209,8 @@ fun SmartAddProductScreen(
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         color = Color(0xFF92400E),
+                                                        maxLines = 1,
+                                                        softWrap = false,
                                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                     )
                                                 }
@@ -1247,7 +1224,19 @@ fun SmartAddProductScreen(
                                                     .clickable { onEditProduct(product) }
                                             )
                                         }
-                                        Text(product.brand.ifBlank { "Generic" }, fontSize = 12.sp, color = Color(0xFF64748B))
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState())
+                                        ) {
+                                            Text(
+                                                product.brand.ifBlank { "Generic" },
+                                                fontSize = 12.sp,
+                                                color = Color(0xFF64748B),
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
                                     }
 
                                     Row(
@@ -1257,19 +1246,23 @@ fun SmartAddProductScreen(
                                         // Move down
                                         IconButton(
                                             onClick = {
-                                                if (index < selectedProductIds.size - 1) {
-                                                    val temp = selectedProductIds[index]
-                                                    selectedProductIds[index] = selectedProductIds[index + 1]
-                                                    selectedProductIds[index + 1] = temp
+                                                val activeList = productSlots.filterNotNull().toMutableList()
+                                                if (index < activeList.size - 1) {
+                                                    val temp = activeList[index]
+                                                    activeList[index] = activeList[index + 1]
+                                                    activeList[index + 1] = temp
+                                                    productSlots.clear()
+                                                    productSlots.addAll(activeList)
+                                                    while (productSlots.size < 2) productSlots.add(null)
                                                 }
                                             },
                                             modifier = Modifier.size(28.dp),
-                                            enabled = index < selectedProductIds.size - 1
+                                            enabled = index < selectedProducts.size - 1
                                         ) {
                                             Icon(
                                                 Icons.Default.ArrowDownward,
                                                 contentDescription = "Down",
-                                                tint = if (index < selectedProductIds.size - 1) Color(0xFF64748B) else Color(0xFFCBD5E1),
+                                                tint = if (index < selectedProducts.size - 1) Color(0xFF64748B) else Color(0xFFCBD5E1),
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -1277,10 +1270,14 @@ fun SmartAddProductScreen(
                                         // Move up
                                         IconButton(
                                             onClick = {
+                                                val activeList = productSlots.filterNotNull().toMutableList()
                                                 if (index > 0) {
-                                                    val temp = selectedProductIds[index]
-                                                    selectedProductIds[index] = selectedProductIds[index - 1]
-                                                    selectedProductIds[index - 1] = temp
+                                                    val temp = activeList[index]
+                                                    activeList[index] = activeList[index - 1]
+                                                    activeList[index - 1] = temp
+                                                    productSlots.clear()
+                                                    productSlots.addAll(activeList)
+                                                    while (productSlots.size < 2) productSlots.add(null)
                                                 }
                                             },
                                             modifier = Modifier.size(28.dp),
@@ -1324,7 +1321,12 @@ fun SmartAddProductScreen(
 
                                         // Remove
                                         IconButton(
-                                            onClick = { selectedProductIds.remove(product.id) },
+                                            onClick = {
+                                                val pIdx = productSlots.indexOf(product.id)
+                                                if (pIdx != -1) {
+                                                    slotToRemoveIndex = pIdx
+                                                }
+                                            },
                                             modifier = Modifier.size(28.dp)
                                         ) {
                                             Icon(
@@ -1381,13 +1383,22 @@ fun SmartAddProductScreen(
 
                         selectedProducts.forEach { product ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    product.name.uppercase(),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF0F172A),
-                                    letterSpacing = 0.5.sp
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        product.name.uppercase(),
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF0F172A),
+                                        letterSpacing = 0.5.sp,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
 
                                 if (editingBrandProductId == product.id) {
                                     Row(
@@ -1447,6 +1458,11 @@ fun SmartAddProductScreen(
 
             // Cards: Specifications with Different badges and Inline Editors (Smart add product 5.PNG)
             items(matrixSpecs) { specName ->
+                val activeUnit = remember(specifications, specName) {
+                    specifications.find {
+                        it.specName.equals(specName, ignoreCase = true) && !it.unit.isNullOrBlank()
+                    }?.unit?.trim()
+                }
                 val isWeight = specName.equals("Weight", ignoreCase = true)
                 val isBattery = specName.equals("Battery", ignoreCase = true)
 
@@ -1466,6 +1482,9 @@ fun SmartAddProductScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .horizontalScroll(rememberScrollState()),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -1475,8 +1494,32 @@ fun SmartAddProductScreen(
                                     tint = Color(0xFF94A3B8),
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Text(specName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                                Text(
+                                    specName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF0F172A),
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                if (!activeUnit.isNullOrBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFFF1F5F9),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
+                                    ) {
+                                        Text(
+                                            text = activeUnit,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF475569),
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
                             }
+                            Spacer(Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = Color(0xFF0284C7)
@@ -1486,6 +1529,8 @@ fun SmartAddProductScreen(
                                     color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
@@ -1502,13 +1547,22 @@ fun SmartAddProductScreen(
                             val isEditingThis = activeInlineEditKey == key
 
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    product.name.uppercase(),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF0F172A),
-                                    letterSpacing = 0.5.sp
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        product.name.uppercase(),
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF0F172A),
+                                        letterSpacing = 0.5.sp,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
 
                                 if (isEditingThis) {
                                     // Expanding inline sub-card editor (IMG_9629 / Smart add product 5)
@@ -1531,14 +1585,20 @@ fun SmartAddProductScreen(
                                                 shape = RoundedCornerShape(8.dp)
                                             )
 
-                                            Text("Details", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF334155))
-                                            OutlinedTextField(
-                                                value = inlineSpecDetails,
-                                                onValueChange = { inlineSpecDetails = it },
-                                                placeholder = { Text("Leave blank if not known yet") },
+                                            Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(8.dp),
-                                                minLines = 2
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("Details", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF334155))
+                                                Text("WYSIWYG: Bold, underline, list & links", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                            }
+                                            HtmlWysiwygEditor(
+                                                value = inlineSpecDetails,
+                                                onChange = { inlineSpecDetails = it },
+                                                placeholder = "Details, multi-line notes, or bold feature...",
+                                                minHeight = 90.dp,
+                                                testTagPrefix = "smart_add_spec_details"
                                             )
 
                                             // Photos picker
@@ -1598,49 +1658,91 @@ fun SmartAddProductScreen(
                                         }
                                     }
                                 } else if (existingSpec != null && existingSpec.details.isNotBlank()) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text(
-                                            text = buildString {
-                                                append(existingSpec.details)
-                                                if (!existingSpec.unit.isNullOrBlank()) append(" ${existingSpec.unit}")
-                                            },
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFF0F172A)
-                                        )
-
-                                        Spacer(Modifier.weight(1f))
-
-                                        IconButton(onClick = {}, modifier = Modifier.size(24.dp)) {
-                                            Icon(Icons.Default.ArrowUpward, contentDescription = "Up", tint = Color(0xFF64748B), modifier = Modifier.size(14.dp))
-                                        }
-                                        IconButton(onClick = {}, modifier = Modifier.size(24.dp)) {
-                                            Icon(Icons.Default.ArrowDownward, contentDescription = "Down", tint = Color(0xFF64748B), modifier = Modifier.size(14.dp))
-                                        }
-                                        TextButton(
-                                            onClick = {
-                                                activeInlineEditKey = key
-                                                inlineSpecDetails = existingSpec.details
-                                                inlineSpecPictures.clear()
-                                                inlineSpecPictures.addAll(existingSpec.pictures)
-                                            },
-                                            contentPadding = PaddingValues(horizontal = 4.dp)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                                            Spacer(Modifier.width(2.dp))
-                                            Text("Edit", fontSize = 12.sp)
+                                            FormattedSpecHtml(
+                                                content = existingSpec.details,
+                                                fontSize = 14.sp
+                                            )
+                                            SpecUnitBadge(
+                                                unit = existingSpec.unit ?: activeUnit,
+                                                details = existingSpec.details
+                                            )
                                         }
-                                        TextButton(
-                                            onClick = { onDeleteSpecInline(product.id, specName) },
-                                            contentPadding = PaddingValues(horizontal = 4.dp),
-                                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF4444))
+
+                                        if (existingSpec.pictures.isNotEmpty()) {
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState())
+                                                    .padding(vertical = 2.dp)
+                                            ) {
+                                                existingSpec.pictures.forEach { pic ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(width = 64.dp, height = 52.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .background(Color(0xFFF8FAFC))
+                                                            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
+                                                    ) {
+                                                        AsyncImage(
+                                                            model = resolveImageModel(
+                                                                LocalContext.current,
+                                                                pic.url,
+                                                                preferredName = pic.name
+                                                            ),
+                                                            contentDescription = pic.name,
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Action buttons positioned down below, not on the right side
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
-                                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
-                                            Spacer(Modifier.width(2.dp))
-                                            Text("Delete", fontSize = 12.sp)
+                                            TextButton(
+                                                onClick = {
+                                                    activeInlineEditKey = key
+                                                    inlineSpecDetails = existingSpec.details
+                                                    inlineSpecPictures.clear()
+                                                    inlineSpecPictures.addAll(existingSpec.pictures)
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Edit,
+                                                    contentDescription = "Edit",
+                                                    modifier = Modifier.size(14.dp),
+                                                    tint = Color(0xFF64748B)
+                                                )
+                                                Spacer(Modifier.width(3.dp))
+                                                Text("Edit", fontSize = 12.sp, color = Color(0xFF64748B))
+                                            }
+                                            TextButton(
+                                                onClick = { specToDeleteInline = Pair(product.id, specName) },
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF4444))
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Delete,
+                                                    contentDescription = "Delete",
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(Modifier.width(3.dp))
+                                                Text("Delete", fontSize = 12.sp)
+                                            }
                                         }
                                     }
                                 } else {
@@ -1739,6 +1841,79 @@ fun SmartAddProductScreen(
                 onDeleteSpecInline(prod.id, specName)
             },
             onDismiss = { selectedProductForSpecOrder = null }
+        )
+    }
+
+    // Delete Confirmation: Slot removal
+    if (slotToRemoveIndex != null) {
+        val index = slotToRemoveIndex!!
+        val slotProdId = productSlots.getOrNull(index)
+        val slotProd = slotProdId?.let { id -> allAvailableProducts.find { it.id == id } }
+        val title = if (slotProd != null) "Remove from Comparison?" else "Remove Comparison Slot?"
+        val message = if (slotProd != null) {
+            "Are you sure you want to remove \"${slotProd.name}\" from Slot ${index + 1}?"
+        } else {
+            "Are you sure you want to remove comparison Slot ${index + 1}?"
+        }
+        DeleteConfirmDialog(
+            title = title,
+            message = message,
+            confirmText = "Remove",
+            testTagPrefix = "smart_add_remove_slot",
+            onConfirm = {
+                if (index in productSlots.indices) {
+                    if (productSlots.size > 2) {
+                        productSlots.removeAt(index)
+                        if (slotPickerIndex == index) slotPickerIndex = null
+                    } else {
+                        productSlots[index] = null
+                    }
+                }
+                slotToRemoveIndex = null
+            },
+            onDismiss = { slotToRemoveIndex = null }
+        )
+    }
+
+    // Delete Confirmation: Reset all slots
+    if (showResetSlotsConfirm) {
+        val activeProducts = productSlots.filterNotNull().mapNotNull { id -> allAvailableProducts.find { it.id == id } }
+        val message = if (activeProducts.isNotEmpty()) {
+            val namesStr = activeProducts.joinToString(", ") { "\"${it.name}\"" }
+            "Are you sure you want to reset all slots? This will remove ${activeProducts.size} product${if (activeProducts.size > 1) "s" else ""} ($namesStr) from comparison."
+        } else {
+            "Are you sure you want to reset all comparison slots?"
+        }
+        DeleteConfirmDialog(
+            title = "Reset All Slots?",
+            message = message,
+            confirmText = "Reset",
+            testTagPrefix = "smart_add_reset_slots",
+            onConfirm = {
+                productSlots.clear()
+                productSlots.addAll(listOf(null, null))
+                slotPickerIndex = null
+                showResetSlotsConfirm = false
+            },
+            onDismiss = { showResetSlotsConfirm = false }
+        )
+    }
+
+    // Delete Confirmation: Inline specification deletion
+    if (specToDeleteInline != null) {
+        val (prodId, specName) = specToDeleteInline!!
+        val prod = allAvailableProducts.find { it.id == prodId }
+        val prodName = prod?.name ?: "product"
+        DeleteConfirmDialog(
+            title = "Delete Specification?",
+            message = "Are you sure you want to delete specification \"$specName\" from \"$prodName\"?",
+            confirmText = "Delete",
+            testTagPrefix = "smart_add_delete_spec",
+            onConfirm = {
+                onDeleteSpecInline(prodId, specName)
+                specToDeleteInline = null
+            },
+            onDismiss = { specToDeleteInline = null }
         )
     }
 }

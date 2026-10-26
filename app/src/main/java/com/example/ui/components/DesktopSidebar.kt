@@ -49,6 +49,8 @@ fun DesktopSidebar(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(16.dp)
         ) {
             // 1. App Header / Branding

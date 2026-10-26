@@ -37,6 +37,8 @@ import androidx.core.content.FileProvider
 import com.example.model.ProductItem
 import com.example.model.ReviewItem
 import com.example.model.SpecificationItem
+import com.example.ui.components.ButtonText
+import com.example.ui.components.DeleteConfirmDialog
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -154,9 +156,8 @@ fun DataBackupScreen(
         val isLaptop = maxWidth >= 720.dp
 
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = com.example.ui.theme.AppSpacing.ScreenContentPaddingScrollable,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 1. Top Header Card: Data & Backup Hub (Screenshot 4)
@@ -431,21 +432,21 @@ fun DataBackupScreen(
                                 onClick = { importFolderLauncher.launch(null) },
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
-                                modifier = Modifier.weight(1f).height(44.dp)
+                                modifier = Modifier.weight(1f).height(42.dp)
                             ) {
                                 Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Import Folder", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                ButtonText("Import Folder", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
 
                             OutlinedButton(
                                 onClick = { importZipLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f).height(44.dp)
+                                modifier = Modifier.weight(1f).height(42.dp)
                             ) {
                                 Icon(Icons.Default.FolderZip, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF0284C7))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Import ZIP", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                ButtonText("Import ZIP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0284C7))
                             }
                         }
 
@@ -456,7 +457,7 @@ fun DataBackupScreen(
                         ) {
                             Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF10B981))
                             Spacer(Modifier.width(6.dp))
-                            Text("Import Single .HTML Note File", fontSize = 12.sp)
+                            ButtonText("Import Single .HTML Note File", fontSize = 12.sp)
                         }
                     }
                 }
@@ -491,11 +492,11 @@ fun DataBackupScreen(
                                     contentColor = Color(0xFF4F46E5)
                                 ),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC7D2FE)),
-                                modifier = Modifier.weight(1f).height(42.dp)
+                                modifier = Modifier.weight(1f).height(40.dp)
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Reload Sample Data", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                ButtonText("Reload Sample Data", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF4F46E5))
                             }
 
                             OutlinedButton(
@@ -505,11 +506,11 @@ fun DataBackupScreen(
                                     contentColor = Color(0xFFDC2626)
                                 ),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA)),
-                                modifier = Modifier.weight(1f).height(42.dp)
+                                modifier = Modifier.weight(1f).height(40.dp)
                             ) {
                                 Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Clear Catalog", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                ButtonText("Clear Catalog", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFDC2626))
                             }
                         }
 
@@ -521,17 +522,15 @@ fun DataBackupScreen(
                                 contentColor = Color(0xFF0F766E)
                             ),
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF99F6E4)),
-                            modifier = Modifier.fillMaxWidth().height(42.dp)
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
                         ) {
                             Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF0F766E))
                             Spacer(Modifier.width(8.dp))
-                            Text("Free Up Storage (Remove Unused & Orphan Images)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            ButtonText("Free Up Storage (Remove Unused & Orphan Images)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F766E))
                         }
                     }
                 }
             }
-
-            item { Spacer(Modifier.height(30.dp)) }
         }
 
         // Processing Overlay Dialog
@@ -630,47 +629,35 @@ fun DataBackupScreen(
 
     // Confirmation: Reset to Seed Catalog
     if (showResetConfirm) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirm = false },
-            title = { Text("Reload Sample Benchmark Catalog?") },
-            text = { Text("This will reload the initial 20 benchmark products (Plaud Note, iPhone 16 Pro, Galaxy S24 Ultra, Sony A7 IV, etc.) and reset specifications.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showResetConfirm = false
-                        onResetToSeedData()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
-                ) {
-                    Text("Reload Sample Data")
-                }
+        DeleteConfirmDialog(
+            title = "Reload Sample Benchmark Catalog?",
+            message = "This will reload the initial 20 benchmark products (Plaud Note, iPhone 16 Pro, Galaxy S24 Ultra, Sony A7 IV, etc.) and reset specifications. Any custom additions will be overwritten.",
+            confirmText = "Reload data",
+            isDestructive = false,
+            testTagPrefix = "backup_reset_catalog",
+            onConfirm = {
+                showResetConfirm = false
+                onResetToSeedData()
             },
-            dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
-            }
+            onDismiss = { showResetConfirm = false }
         )
     }
 
     // Confirmation: Clear All Data
     if (showClearConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirm = false },
-            title = { Text("Clear All Catalog Data?") },
-            text = { Text("This will delete all products, specifications, and reviews from the database. Make sure you have exported a backup first.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showClearConfirm = false
-                        onClearAllData()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
-                ) {
-                    Text("Clear All Data")
-                }
+        val prodNames = products.take(4).joinToString(", ") { "\"${it.name}\"" }
+        val more = if (products.size > 4) " + ${products.size - 4} more" else ""
+        val itemsSummary = if (products.isNotEmpty()) " (${prodNames}${more})" else ""
+        DeleteConfirmDialog(
+            title = "Clear All Catalog Data?",
+            message = "This will permanently delete ${products.size} product(s)$itemsSummary, ${specifications.size} specifications, and ${reviews.size} reviews from the database. Make sure you have exported a backup first.",
+            confirmText = "Clear all data",
+            testTagPrefix = "backup_clear_all",
+            onConfirm = {
+                showClearConfirm = false
+                onClearAllData()
             },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) { Text("Cancel") }
-            }
+            onDismiss = { showClearConfirm = false }
         )
     }
 }
@@ -786,15 +773,16 @@ private fun ExportBackupSectionContent(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
+                .height(42.dp)
                 .testTag("btn_save_zip_to_folder")
         ) {
             Icon(Icons.Default.SaveAlt, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text(
+            ButtonText(
                 text = "Save Backup ZIP to Storage...",
                 fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
         }
 
@@ -814,7 +802,7 @@ private fun ExportBackupSectionContent(
         ) {
             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
-            Text(
+            ButtonText(
                 text = "Auto-Save to Downloads Folder",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold
@@ -841,7 +829,7 @@ private fun ExportBackupSectionContent(
             ) {
                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Share ZIP", fontSize = 12.sp)
+                ButtonText("Share ZIP", fontSize = 12.sp)
             }
 
             // Export database.json
@@ -855,7 +843,7 @@ private fun ExportBackupSectionContent(
             ) {
                 Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Export .JSON", fontSize = 12.sp)
+                ButtonText("Export .JSON", fontSize = 12.sp)
             }
         }
 
@@ -934,7 +922,7 @@ private fun RestoreBackupSectionContent(
                     color = Color(0xFF0F172A)
                 )
                 Text(
-                    text = "Supports both .zip archives and direct database.json files",
+                    text = "Supports Productc webapp and Android .zip archives / database.json",
                     fontSize = 12.sp,
                     color = Color(0xFF64748B)
                 )
@@ -942,7 +930,7 @@ private fun RestoreBackupSectionContent(
         }
 
         Text(
-            text = "Select any previously exported ProductCompare .zip archive or database.json file from your phone storage, Downloads folder, or Windows subsystem disk.",
+            text = "Select any .zip archive or database.json file exported from either the Productc webapp or this Android app. Restores all products, specifications, rich reviews, and high-resolution photo attachments offline.",
             fontSize = 12.sp,
             color = Color(0xFF475569),
             lineHeight = 16.sp

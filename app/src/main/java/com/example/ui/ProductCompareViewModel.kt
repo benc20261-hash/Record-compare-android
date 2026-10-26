@@ -81,6 +81,10 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
     private val _isAddSpecDialogOpen = MutableStateFlow<ProductItem?>(null)
     val isAddSpecDialogOpen: StateFlow<ProductItem?> = _isAddSpecDialogOpen.asStateFlow()
 
+    data class AddReviewDialogState(val preselectedProduct: ProductItem?)
+    private val _addReviewDialogState = MutableStateFlow<AddReviewDialogState?>(null)
+    val addReviewDialogState: StateFlow<AddReviewDialogState?> = _addReviewDialogState.asStateFlow()
+
     private val _isAddReviewDialogOpen = MutableStateFlow<ProductItem?>(null)
     val isAddReviewDialogOpen: StateFlow<ProductItem?> = _isAddReviewDialogOpen.asStateFlow()
 
@@ -128,7 +132,8 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
                 details = entity.details,
                 unit = entity.unit,
                 orderIndex = entity.orderIndex,
-                pictures = parsePicturesJson(entity.picturesJson)
+                pictures = parsePicturesJson(entity.picturesJson),
+                isNumeric = entity.isNumeric
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -258,6 +263,12 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
 
     fun openAddReviewDialog(product: ProductItem?) {
         _isAddReviewDialogOpen.value = product
+        _addReviewDialogState.value = AddReviewDialogState(product)
+    }
+
+    fun closeAddReviewDialog() {
+        _isAddReviewDialogOpen.value = null
+        _addReviewDialogState.value = null
     }
 
     fun openEditReviewDialog(review: ReviewItem?) {
@@ -375,7 +386,8 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
                     details = s.details,
                     unit = s.unit?.ifBlank { null },
                     orderIndex = index + 1,
-                    picturesJson = specPicsArr.toString()
+                    picturesJson = specPicsArr.toString(),
+                    isNumeric = s.isNumeric
                 )
                 repository.insertSpecification(specEntity)
             }
@@ -395,7 +407,14 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun addSpecification(productId: String, productTitle: String, specName: String, details: String, unit: String?) {
+    fun addSpecification(
+        productId: String,
+        productTitle: String,
+        specName: String,
+        details: String,
+        unit: String?,
+        isNumeric: Boolean? = null
+    ) {
         viewModelScope.launch {
             val id = "spec_" + UUID.randomUUID().toString().replace("-", "").take(17)
             val entity = SpecificationEntity(
@@ -406,7 +425,8 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
                 details = details,
                 unit = unit?.ifBlank { null },
                 orderIndex = (specifications.value.maxOfOrNull { it.orderIndex } ?: 0) + 1,
-                picturesJson = "[]"
+                picturesJson = "[]",
+                isNumeric = isNumeric
             )
             repository.insertSpecification(entity)
             showBanner("Specification \"$specName\" added!")
@@ -434,15 +454,20 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
             repository.insertProduct(entity)
 
             inheritSpecNames.distinct().forEachIndexed { index, specName ->
+                val existingRef = specifications.value.find { s ->
+                    s.specName.trim().equals(specName.trim(), ignoreCase = true) &&
+                    (!s.unit.isNullOrBlank() || s.isNumeric != null)
+                }
                 val specEntity = SpecificationEntity(
                     id = "spec_" + UUID.randomUUID().toString().replace("-", "").take(17),
                     productId = newId,
                     productTitle = name.trim(),
                     specName = specName,
                     details = "",
-                    unit = null,
+                    unit = existingRef?.unit?.trim()?.ifBlank { null },
                     orderIndex = index + 1,
-                    picturesJson = "[]"
+                    picturesJson = "[]",
+                    isNumeric = existingRef?.isNumeric
                 )
                 repository.insertSpecification(specEntity)
             }
@@ -461,7 +486,8 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
         specName: String,
         details: String,
         pictures: List<PictureItem> = emptyList(),
-        unit: String? = null
+        unit: String? = null,
+        isNumeric: Boolean? = null
     ) {
         viewModelScope.launch {
             val existing = specifications.value.find {
@@ -486,10 +512,38 @@ class ProductCompareViewModel(application: Application) : AndroidViewModel(appli
                 details = details,
                 unit = unit ?: existing?.unit,
                 orderIndex = existing?.orderIndex ?: ((specifications.value.maxOfOrNull { it.orderIndex } ?: 0) + 1),
-                picturesJson = picsArr.toString()
+                picturesJson = picsArr.toString(),
+                isNumeric = isNumeric ?: existing?.isNumeric
             )
             repository.insertSpecification(entity)
             showBanner("Saved \"$specName\" for $productTitle")
+        }
+    }
+
+    fun saveSpecification(spec: SpecificationItem) {
+        viewModelScope.launch {
+            val picsArr = JSONArray()
+            spec.pictures.forEach { p ->
+                val obj = org.json.JSONObject()
+                obj.put("id", p.id)
+                obj.put("name", p.name)
+                obj.put("url", p.url)
+                picsArr.put(obj)
+            }
+
+            val entity = SpecificationEntity(
+                id = if (spec.id.isBlank()) "spec_" + UUID.randomUUID().toString().replace("-", "").take(17) else spec.id,
+                productId = spec.productId,
+                productTitle = spec.productTitle,
+                specName = spec.specName,
+                details = spec.details,
+                unit = spec.unit?.ifBlank { null },
+                orderIndex = spec.orderIndex,
+                picturesJson = picsArr.toString(),
+                isNumeric = spec.isNumeric
+            )
+            repository.insertSpecification(entity)
+            showBanner("Specification \"${spec.specName}\" saved!")
         }
     }
 
