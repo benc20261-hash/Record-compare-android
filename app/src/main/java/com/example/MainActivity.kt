@@ -536,6 +536,7 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
             onAddSpec = { viewModel.openAddSpecDialog(prod) },
             onAddReview = { viewModel.openAddReviewDialog(prod) },
             onReviewClick = { viewModel.showReviewDetail(it) },
+            onEditReview = { viewModel.openEditReviewDialog(it) },
             onDeleteSpec = { spec -> viewModel.deleteSpecification(spec.id) },
             onSaveSpec = { spec -> viewModel.saveSpecification(spec) },
             onDismiss = { viewModel.showProductDetail(null) }

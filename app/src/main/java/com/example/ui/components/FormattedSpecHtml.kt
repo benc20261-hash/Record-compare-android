@@ -23,6 +23,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Prepares and normalizes specification details or review summaries as rich text,
@@ -105,127 +108,104 @@ fun getSchemeDisplayName(url: String): String {
     }
 }
 
+
 /**
- * Parses markdown and simple HTML tags into a Jetpack Compose AnnotatedString.
+ * Formats timestamps or date strings into a beautiful, human-readable format like "Sep 4, 2026".
+ */
+fun formatBeautifulDate(rawDate: String?): String {
+    if (rawDate.isNullOrBlank()) {
+        val now = System.currentTimeMillis()
+        return SimpleDateFormat("MMM d, yyyy", Locale.ENGLISH).format(Date(now))
+    }
+    val trimmed = rawDate.trim()
+
+    // 1. Try parsing numeric epoch millis
+    val millis = trimmed.toLongOrNull()
+    if (millis != null && millis > 0) {
+        return SimpleDateFormat("MMM d, yyyy", Locale.ENGLISH).format(Date(millis))
+    }
+
+    // 2. Try parsing common date string formats
+    val patterns = listOf(
+        "M/d/yyyy",
+        "MM/dd/yyyy",
+        "M/d/yy",
+        "yyyy-MM-dd",
+        "yyyy/MM/dd",
+        "dd/MM/yyyy",
+        "d/M/yyyy",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'"
+    )
+    for (pattern in patterns) {
+        try {
+            val sdf = SimpleDateFormat(pattern, Locale.ENGLISH)
+            sdf.isLenient = true
+            val parsed = sdf.parse(trimmed)
+            if (parsed != null) {
+                return SimpleDateFormat("MMM d, yyyy", Locale.ENGLISH).format(parsed)
+            }
+        } catch (_: Exception) {}
+    }
+
+    return trimmed
+}
+
+/**
+ * Parses markdown and HTML tags into a clean Jetpack Compose AnnotatedString.
+ * Guarantees zero raw tags like <u>, <b>, <i>, or <u><u>* remain in the visible text.
  */
 fun parseRichTextToAnnotatedString(
     text: String,
     baseColor: Color,
     linkColor: Color = Color(0xFF2563EB)
 ): AnnotatedString {
-    val formatted = formatSpecificationDetails(text)
-    if (formatted.isBlank()) {
+    if (text.isBlank()) {
         return AnnotatedString("")
     }
 
+    // 1. Normalize linebreaks, bullets, and links
+    val formatted = formatSpecificationDetails(text)
     val linkNormalized = normalizeRawLinks(formatted)
 
-    // Replace HTML bold/italic/underline with markdown syntax first
-    var processed = linkNormalized
-        .replace(Regex("</?(?:b|strong)>", RegexOption.IGNORE_CASE), "**")
-        .replace(Regex("</?(?:i|em)>", RegexOption.IGNORE_CASE), "*")
-        .replace(Regex("</?u>", RegexOption.IGNORE_CASE), "<u>")
+    // 2. Use parseHtmlToRichText to extract clean plain text and style spans
+    val (plain, spans) = parseHtmlToRichText(linkNormalized)
+    if (plain.isEmpty()) {
+        return AnnotatedString("")
+    }
 
     return buildAnnotatedString {
-        var i = 0
-        val len = processed.length
+        append(plain)
+        for (span in spans) {
+            val s = span.start.coerceIn(0, plain.length)
+            val e = span.end.coerceIn(0, plain.length)
+            if (s >= e) continue
 
-        while (i < len) {
-            when {
-                // Markdown link: [label](url)
-                processed.startsWith("[", i) -> {
-                    val closeBracket = processed.indexOf(']', i)
-                    if (closeBracket != -1 && closeBracket + 1 < len && processed[closeBracket + 1] == '(') {
-                        val closeParen = processed.indexOf(')', closeBracket + 2)
-                        if (closeParen != -1) {
-                            val linkText = processed.substring(i + 1, closeBracket)
-                            val linkUrl = processed.substring(closeBracket + 2, closeParen).trim()
-                            val start = length
-                            append(linkText)
-                            val isApp = UriHelper.isAppSchemeUrl(linkUrl)
-                            addStyle(
-                                SpanStyle(
-                                    color = if (isApp) Color(0xFF7C3AED) else linkColor,
-                                    textDecoration = TextDecoration.Underline,
-                                    fontWeight = if (isApp) FontWeight.Bold else FontWeight.SemiBold
-                                ),
-                                start,
-                                length
-                            )
-                            addStringAnnotation(tag = "URL", annotation = linkUrl, start = start, end = length)
-                            i = closeParen + 1
-                            continue
-                        }
-                    }
-                    append(processed[i])
-                    i++
-                }
-
-                // Bold: **text** or __text__
-                processed.startsWith("**", i) -> {
-                    val endBold = processed.indexOf("**", i + 2)
-                    if (endBold != -1) {
-                        val boldContent = processed.substring(i + 2, endBold)
-                        val start = length
-                        append(boldContent)
-                        addStyle(SpanStyle(fontWeight = FontWeight.Bold, color = baseColor), start, length)
-                        i = endBold + 2
-                    } else {
-                        append(processed[i])
-                        i++
-                    }
-                }
-
-                // Underline tag <u>text</u>
-                processed.startsWith("<u>", i, ignoreCase = true) -> {
-                    val endU = processed.indexOf("<u>", i + 3, ignoreCase = true)
-                    val endTag = if (endU != -1) endU else processed.indexOf("</u>", i + 3, ignoreCase = true)
-                    if (endTag != -1) {
-                        val uContent = processed.substring(i + 3, endTag)
-                        val start = length
-                        append(uContent)
-                        addStyle(SpanStyle(textDecoration = TextDecoration.Underline), start, length)
-                        i = endTag + if (processed.substring(endTag).startsWith("</u>", ignoreCase = true)) 4 else 3
-                    } else {
-                        append(processed[i])
-                        i++
-                    }
-                }
-
-                // Italic: *text* (when not preceded or followed by *)
-                processed.startsWith("*", i) && (i + 1 < len && processed[i + 1] != '*') -> {
-                    val endItalic = processed.indexOf('*', i + 1)
-                    if (endItalic != -1 && (endItalic + 1 >= len || processed[endItalic + 1] != '*')) {
-                        val italicContent = processed.substring(i + 1, endItalic)
-                        val start = length
-                        append(italicContent)
-                        addStyle(SpanStyle(fontStyle = FontStyle.Italic), start, length)
-                        i = endItalic + 1
-                    } else {
-                        append(processed[i])
-                        i++
-                    }
-                }
-
-                // Strikethrough ~~text~~
-                processed.startsWith("~~", i) -> {
-                    val endStrike = processed.indexOf("~~", i + 2)
-                    if (endStrike != -1) {
-                        val strikeContent = processed.substring(i + 2, endStrike)
-                        val start = length
-                        append(strikeContent)
-                        addStyle(SpanStyle(textDecoration = TextDecoration.LineThrough), start, length)
-                        i = endStrike + 2
-                    } else {
-                        append(processed[i])
-                        i++
-                    }
-                }
-
-                else -> {
-                    append(processed[i])
-                    i++
-                }
+            if (span.isBold) {
+                addStyle(SpanStyle(fontWeight = FontWeight.Bold, color = baseColor), s, e)
+            }
+            if (span.isItalic) {
+                addStyle(SpanStyle(fontStyle = FontStyle.Italic), s, e)
+            }
+            if (span.isUnderline) {
+                addStyle(SpanStyle(textDecoration = TextDecoration.Underline), s, e)
+            }
+            if (span.isStrike) {
+                addStyle(SpanStyle(textDecoration = TextDecoration.LineThrough), s, e)
+            }
+            if (!span.url.isNullOrBlank()) {
+                val isApp = UriHelper.isAppSchemeUrl(span.url)
+                addStyle(
+                    SpanStyle(
+                        color = if (isApp) Color(0xFF7C3AED) else linkColor,
+                        fontWeight = if (isApp) FontWeight.Bold else FontWeight.SemiBold,
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    s,
+                    e
+                )
+                addStringAnnotation(tag = "URL", annotation = span.url, start = s, end = e)
             }
         }
     }

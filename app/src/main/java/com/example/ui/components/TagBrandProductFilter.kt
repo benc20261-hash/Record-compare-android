@@ -41,7 +41,7 @@ fun TagBrandProductFilter(
     searchPlaceholder: String = "Search tags, brands, or products...",
     modifier: Modifier = Modifier
 ) {
-    var activeCategory by remember { mutableStateOf("tag") } // "tag", "brand", "product"
+    var activeCategory by remember { mutableStateOf("all") } // "all", "tag", "brand", "product"
     var internalQuery by remember { mutableStateOf("") }
     val chipsScrollState = rememberScrollState()
 
@@ -55,7 +55,7 @@ fun TagBrandProductFilter(
     }
 
     // Aggregate unique items
-    val (allItems, tagList, brandList, productList) = remember(tags, brands, products) {
+    val (sortedAll, tagList, brandList, productList) = remember(tags, brands, products) {
         val tagSet = linkedSetOf<String>()
         val brandSet = linkedSetOf<String>()
         val productSet = linkedSetOf<String>()
@@ -82,15 +82,18 @@ fun TagBrandProductFilter(
         sortedBrands.forEach { combined.add(FilterOptionItem(it, FilterOptionType.BRAND)) }
         sortedProducts.forEach { combined.add(FilterOptionItem(it, FilterOptionType.PRODUCT)) }
 
-        Tuple4(combined, sortedTags, sortedBrands, sortedProducts)
+        // Sort all items combined alphabetically by label so 'All' displays consistent A-Z order
+        val allAlphabetical = combined.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+
+        Tuple4(allAlphabetical, sortedTags, sortedBrands, sortedProducts)
     }
 
-    val totalOptionsCount = tagList.size + brandList.size + productList.size
+    val totalOptionsCount = sortedAll.size
 
-    // Auto-switch category if current category has 0 matches for search text, but another category has matches
+    // Auto-switch category if user is in a specific sub-category that has 0 matches for search text
     LaunchedEffect(effectiveQuery) {
         val q = effectiveQuery.trim().lowercase()
-        if (q.isNotEmpty()) {
+        if (q.isNotEmpty() && activeCategory != "all") {
             val tagMatches = tagList.count { it.lowercase().contains(q) }
             val brandMatches = brandList.count { it.lowercase().contains(q) }
             val productMatches = productList.count { it.lowercase().contains(q) }
@@ -103,24 +106,26 @@ fun TagBrandProductFilter(
             }
 
             if (currentMatches == 0) {
-                if (productMatches > 0) {
-                    activeCategory = "product"
+                if (tagMatches > 0) {
+                    activeCategory = "tag"
                 } else if (brandMatches > 0) {
                     activeCategory = "brand"
-                } else if (tagMatches > 0) {
-                    activeCategory = "tag"
+                } else if (productMatches > 0) {
+                    activeCategory = "product"
+                } else {
+                    activeCategory = "all"
                 }
             }
         }
     }
 
     // Filter items by active category and search text
-    val displayedItems = remember(allItems, activeCategory, effectiveQuery) {
+    val displayedItems = remember(sortedAll, activeCategory, effectiveQuery) {
         val base = when (activeCategory) {
-            "tag" -> allItems.filter { it.type == FilterOptionType.TAG }
-            "brand" -> allItems.filter { it.type == FilterOptionType.BRAND }
-            "product" -> allItems.filter { it.type == FilterOptionType.PRODUCT }
-            else -> allItems
+            "tag" -> sortedAll.filter { it.type == FilterOptionType.TAG }
+            "brand" -> sortedAll.filter { it.type == FilterOptionType.BRAND }
+            "product" -> sortedAll.filter { it.type == FilterOptionType.PRODUCT }
+            else -> sortedAll // "all" searches through all tags, brands, and products
         }
         val q = effectiveQuery.trim().lowercase()
         if (q.isNotEmpty()) {
@@ -223,84 +228,101 @@ fun TagBrandProductFilter(
                 )
             )
 
-            // Category Segmented Tabs (Tags, Brands, Products)
+            // Row 2: Category Scope Selector Tabs [ ✨ All (N) ] [ 🏷️ Tags (N) ] [ 🏢 Brands (N) ] [ 📦 Products (N) ] and [ Filtered: X ✕ ]
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Tags Tab (Indigo when selected)
-                CategoryTabPill(
-                    icon = Icons.Default.Sell,
-                    label = "Tags",
-                    count = tagList.size,
-                    isSelected = activeCategory == "tag",
-                    selectedBgColor = Color(0xFF4F46E5),
-                    selectedIconTint = Color.White,
-                    unselectedIconTint = Color(0xFF818CF8),
-                    onClick = { activeCategory = "tag" }
-                )
-
-                // Brands Tab (Amber when selected)
-                CategoryTabPill(
-                    icon = Icons.Default.Storefront,
-                    label = "Brands",
-                    count = brandList.size,
-                    isSelected = activeCategory == "brand",
-                    selectedBgColor = Color(0xFFD97706),
-                    selectedIconTint = Color.White,
-                    unselectedIconTint = Color(0xFFF59E0B),
-                    onClick = { activeCategory = "brand" }
-                )
-
-                // Products Tab (Emerald/Green when selected)
-                CategoryTabPill(
-                    icon = Icons.Default.Inventory2,
-                    label = "Products",
-                    count = productList.size,
-                    isSelected = activeCategory == "product",
-                    selectedBgColor = Color(0xFF059669),
-                    selectedIconTint = Color.White,
-                    unselectedIconTint = Color(0xFF10B981),
-                    onClick = { activeCategory = "product" }
-                )
-            }
-
-            // Filtered Active Badge (e.g. "Filtered: Plaud ✕")
-            val isFiltered = selectedTag.isNotBlank() && !selectedTag.equals("All", ignoreCase = true)
-            if (isFiltered) {
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color(0xFFEFF6FF),
-                    border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
-                    modifier = Modifier.padding(top = 2.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    // All Tab (Black / Slate-900 when selected with Sparkles icon matching screenshot)
+                    CategoryTabPill(
+                        icon = Icons.Default.AutoAwesome,
+                        label = "All",
+                        count = sortedAll.size,
+                        isSelected = activeCategory == "all",
+                        selectedBgColor = Color(0xFF0F172A),
+                        selectedIconTint = Color.White,
+                        unselectedIconTint = Color(0xFF64748B),
+                        onClick = { activeCategory = "all" }
+                    )
+
+                    // Tags Tab (Indigo when selected)
+                    CategoryTabPill(
+                        icon = Icons.Default.Sell,
+                        label = "Tags",
+                        count = tagList.size,
+                        isSelected = activeCategory == "tag",
+                        selectedBgColor = Color(0xFF4F46E5),
+                        selectedIconTint = Color.White,
+                        unselectedIconTint = Color(0xFF818CF8),
+                        onClick = { activeCategory = "tag" }
+                    )
+
+                    // Brands Tab (Amber when selected)
+                    CategoryTabPill(
+                        icon = Icons.Default.Storefront,
+                        label = "Brands",
+                        count = brandList.size,
+                        isSelected = activeCategory == "brand",
+                        selectedBgColor = Color(0xFFD97706),
+                        selectedIconTint = Color.White,
+                        unselectedIconTint = Color(0xFFF59E0B),
+                        onClick = { activeCategory = "brand" }
+                    )
+
+                    // Products Tab (Emerald/Green when selected)
+                    CategoryTabPill(
+                        icon = Icons.Default.Inventory2,
+                        label = "Products",
+                        count = productList.size,
+                        isSelected = activeCategory == "product",
+                        selectedBgColor = Color(0xFF059669),
+                        selectedIconTint = Color.White,
+                        unselectedIconTint = Color(0xFF10B981),
+                        onClick = { activeCategory = "product" }
+                    )
+                }
+
+                // Filtered Active Badge (e.g. "Filtered: Adidas ✕") aligned on the right of category tabs
+                val isFiltered = selectedTag.isNotBlank() && !selectedTag.equals("All", ignoreCase = true)
+                if (isFiltered) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFEFF6FF),
+                        border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                        modifier = Modifier.padding(start = 12.dp)
                     ) {
-                        Text(
-                            text = "Filtered:",
-                            fontSize = 11.sp,
-                            color = Color(0xFF64748B)
-                        )
-                        Text(
-                            text = selectedTag,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2563EB)
-                        )
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Clear filter",
-                            tint = Color(0xFF2563EB),
-                            modifier = Modifier
-                                .size(13.dp)
-                                .clickable { onSelectTag("All") }
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text(
+                                text = "Filtered:",
+                                fontSize = 11.sp,
+                                color = Color(0xFF64748B)
+                            )
+                            Text(
+                                text = selectedTag,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2563EB)
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear filter",
+                                tint = Color(0xFF2563EB),
+                                modifier = Modifier
+                                    .size(13.dp)
+                                    .clickable { onSelectTag("All") }
+                            )
+                        }
                     }
                 }
             }
@@ -341,11 +363,21 @@ fun TagBrandProductFilter(
                         }
                         Text(
                             text = "All",
-                            fontSize = 11.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium,
                             color = if (isAllSelected) Color.White else Color(0xFF334155)
                         )
                     }
+                }
+
+                if (displayedItems.isEmpty() && effectiveQuery.isNotBlank()) {
+                    Text(
+                        text = "No matching ${if (activeCategory == "all") "options" else "${activeCategory}s"} for \"$effectiveQuery\"",
+                        fontSize = 11.5.sp,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                    )
                 }
 
                 // Dynamic Matching Chips
@@ -375,7 +407,7 @@ fun TagBrandProductFilter(
                             .testTag("tag_chip_${item.label}")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
@@ -386,22 +418,21 @@ fun TagBrandProductFilter(
                                     tint = Color.White,
                                     modifier = Modifier.size(11.dp)
                                 )
-                            } else {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = when (item.type) {
-                                        FilterOptionType.TAG -> Color(0xFF818CF8)
-                                        FilterOptionType.BRAND -> Color(0xFFF59E0B)
-                                        FilterOptionType.PRODUCT -> Color(0xFF10B981)
-                                    },
-                                    modifier = Modifier.size(11.dp)
-                                )
                             }
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = if (isSelected) Color.White else when (item.type) {
+                                    FilterOptionType.TAG -> Color(0xFF818CF8)
+                                    FilterOptionType.BRAND -> Color(0xFFF59E0B)
+                                    FilterOptionType.PRODUCT -> Color(0xFF10B981)
+                                },
+                                modifier = Modifier.size(12.dp)
+                            )
                             Text(
                                 text = item.label,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 color = if (isSelected) Color.White else Color(0xFF334155)
                             )
                         }

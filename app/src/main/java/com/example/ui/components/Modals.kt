@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.OpenInFull
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,6 +66,7 @@ fun ProductDetailModal(
     onAddSpec: () -> Unit,
     onAddReview: () -> Unit,
     onReviewClick: (ReviewItem) -> Unit,
+    onEditReview: ((ReviewItem) -> Unit)? = null,
     onEditSpec: ((SpecificationItem) -> Unit)? = null,
     onDeleteSpec: ((SpecificationItem) -> Unit)? = null,
     onSaveSpec: ((SpecificationItem) -> Unit)? = null,
@@ -77,16 +79,7 @@ fun ProductDetailModal(
     var activeLightboxIndex by remember { mutableIntStateOf(0) }
 
     val formattedCreatedDate = remember(product.createdTime) {
-        if (product.createdTime.isBlank()) {
-            "10/21/2026"
-        } else {
-            try {
-                val ts = product.createdTime.toLong()
-                SimpleDateFormat("MM/dd/yyyy", Locale.getDefault()).format(Date(ts))
-            } catch (e: Exception) {
-                product.createdTime
-            }
-        }
+        formatBeautifulDate(product.createdTime)
     }
 
     BackHandler { onDismiss() }
@@ -509,11 +502,11 @@ fun ProductDetailModal(
                                 border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = product.overview.ifBlank { "No overview provided." },
+                                FormattedSpecHtml(
+                                    content = product.overview.ifBlank { "No overview provided." },
                                     fontSize = 13.sp,
-                                    color = Color(0xFF334155),
                                     lineHeight = 19.sp,
+                                    color = Color(0xFF334155),
                                     modifier = Modifier.padding(14.dp)
                                 )
                             }
@@ -786,67 +779,178 @@ fun ProductDetailModal(
                         }
                     }
 
-                    // Community Reviews section (if reviews exist)
-                    if (reviews.isNotEmpty()) {
-                        item {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                    // Customer Reviews section
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.Chat,
+                                        contentDescription = null,
+                                        tint = Color(0xFF4F46E5),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = "CUSTOMER REVIEWS (${reviews.size})",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF0F172A),
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                                TextButton(
+                                    onClick = onAddReview,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Outlined.Chat,
-                                            contentDescription = null,
-                                            tint = Color(0xFF4F46E5),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = Color(0xFF4F46E5),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = "Add Review",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF4F46E5)
+                                    )
+                                }
+                            }
+
+                            if (reviews.isEmpty()) {
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(20.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
                                         Text(
-                                            text = "COMMUNITY REVIEWS (${reviews.size})",
-                                            fontWeight = FontWeight.ExtraBold,
+                                            text = "No reviews yet for this product.",
                                             fontSize = 12.sp,
-                                            color = Color(0xFF0F172A),
-                                            letterSpacing = 0.5.sp
+                                            color = Color(0xFF94A3B8)
                                         )
-                                    }
-                                    TextButton(onClick = onAddReview) {
-                                        Text("Write Review", fontSize = 11.sp, color = Color(0xFF4F46E5))
                                     }
                                 }
-
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     reviews.forEach { review ->
                                         Card(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { onReviewClick(review) },
+                                            modifier = Modifier.fillMaxWidth(),
                                             shape = RoundedCornerShape(12.dp),
                                             colors = CardDefaults.cardColors(containerColor = Color.White),
                                             border = BorderStroke(1.dp, Color(0xFFE2E8F0))
                                         ) {
                                             Column(
-                                                modifier = Modifier.padding(12.dp),
-                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                modifier = Modifier.padding(14.dp),
+                                                verticalArrangement = Arrangement.spacedBy(10.dp)
                                             ) {
+                                                // Header row: Verified Reviewer on left, Review #X and actions on right
                                                 Row(
                                                     modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Text(
-                                                        "Review #${review.reviewNumber}",
+                                                        text = review.authorName.ifBlank { "Verified Reviewer" },
                                                         fontWeight = FontWeight.Bold,
-                                                        fontSize = 12.sp,
-                                                        color = Color(0xFF4F46E5)
+                                                        fontSize = 13.sp,
+                                                        color = Color(0xFF0F172A)
                                                     )
-                                                    Text("Read →", fontSize = 11.sp, color = Color(0xFF4F46E5))
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "Review #${review.reviewNumber}",
+                                                            fontSize = 12.sp,
+                                                            color = Color(0xFF64748B),
+                                                            fontWeight = FontWeight.Medium
+                                                        )
+                                                        IconButton(
+                                                            onClick = { onReviewClick(review) },
+                                                            modifier = Modifier.size(28.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Outlined.Visibility,
+                                                                contentDescription = "View Review",
+                                                                tint = Color(0xFF64748B),
+                                                                modifier = Modifier.size(17.dp)
+                                                            )
+                                                        }
+                                                        if (onEditReview != null) {
+                                                            IconButton(
+                                                                onClick = { onEditReview.invoke(review) },
+                                                                modifier = Modifier.size(28.dp)
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Outlined.Edit,
+                                                                    contentDescription = "Edit Review",
+                                                                    tint = Color(0xFF64748B),
+                                                                    modifier = Modifier.size(17.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
                                                 }
-                                                Text(
-                                                    text = review.body.take(120),
-                                                    fontSize = 12.sp,
-                                                    color = Color(0xFF475569)
+
+                                                // Clean rich text review body with zero raw HTML tags
+                                                FormattedSpecHtml(
+                                                    content = review.body,
+                                                    fontSize = 13.sp,
+                                                    lineHeight = 19.sp,
+                                                    color = Color(0xFF334155)
                                                 )
+
+                                                // Thumbnail pictures gallery (if present)
+                                                if (review.pictures.isNotEmpty()) {
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .horizontalScroll(rememberScrollState()),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        review.pictures.forEachIndexed { picIndex, pic ->
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(64.dp)
+                                                                    .clip(RoundedCornerShape(10.dp))
+                                                                    .background(Color(0xFFF8FAFC))
+                                                                    .border(
+                                                                        1.dp,
+                                                                        Color(0xFFCBD5E1),
+                                                                        RoundedCornerShape(10.dp)
+                                                                    )
+                                                                    .clickable {
+                                                                        activeLightboxImages = review.pictures
+                                                                        activeLightboxIndex = picIndex
+                                                                    }
+                                                            ) {
+                                                                AsyncImage(
+                                                                    model = resolveImageModel(
+                                                                        LocalContext.current,
+                                                                        pic.url,
+                                                                        preferredName = pic.name
+                                                                    ),
+                                                                    contentDescription = pic.name,
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    contentScale = ContentScale.Crop
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
