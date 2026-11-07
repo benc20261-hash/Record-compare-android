@@ -39,7 +39,10 @@ import com.example.model.resolveImageModel
 import com.example.ui.components.ButtonText
 import com.example.ui.components.ComparisonTray
 import com.example.ui.components.DeviceGraphicPlaceholder
+import com.example.ui.components.FormattedSpecHtml
+import com.example.ui.components.SpecUnitBadge
 import com.example.ui.components.TagBrandProductFilter
+import com.example.ui.components.htmlToPlainText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -477,30 +480,70 @@ fun CatalogScreen(
                         ) {
                             Column(
                                 modifier = Modifier.padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 prodSpecs.take(2).forEach { spec ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = spec.specName,
-                                            fontSize = 12.sp,
-                                            color = Color(0xFF64748B)
-                                        )
-                                        Text(
-                                            text = if (spec.details.isNotBlank()) {
-                                                buildString {
-                                                    append(spec.details)
-                                                    if (!spec.unit.isNullOrBlank()) append(" ${spec.unit}")
+                                    val isMultiLineOrLong = remember(spec.details) {
+                                        val clean = htmlToPlainText(spec.details)
+                                        clean.contains('\n') || clean.contains('-') || clean.contains('•') || clean.length > 25
+                                    }
+
+                                    if (isMultiLineOrLong) {
+                                        // Left-aligned on new line for multi-line or long values
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = spec.specName,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color(0xFF64748B)
+                                                )
+                                                if (!spec.unit.isNullOrBlank()) {
+                                                    SpecUnitBadge(unit = spec.unit, details = spec.details)
                                                 }
-                                            } else "—",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFF0F172A)
-                                        )
+                                            }
+                                            FormattedSpecHtml(
+                                                content = spec.details,
+                                                fontSize = 12.sp,
+                                                lineHeight = 17.sp,
+                                                color = Color(0xFF0F172A),
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    } else {
+                                        // Short single-line specs: left spec name, left-aligned value on right
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = spec.specName,
+                                                fontSize = 12.sp,
+                                                color = Color(0xFF64748B),
+                                                modifier = Modifier.padding(end = 8.dp)
+                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                FormattedSpecHtml(
+                                                    content = spec.details,
+                                                    fontSize = 12.sp,
+                                                    lineHeight = 16.sp,
+                                                    color = Color(0xFF0F172A)
+                                                )
+                                                if (!spec.unit.isNullOrBlank()) {
+                                                    SpecUnitBadge(unit = spec.unit, details = spec.details)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

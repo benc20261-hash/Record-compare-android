@@ -531,12 +531,27 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
             reviews = prodReviews,
             isCompared = isCompared,
             onToggleCompare = { viewModel.toggleCompare(prod.id) },
-            onEdit = { viewModel.showEditProduct(prod) },
-            onDelete = { viewModel.deleteProduct(prod.id) },
+            onEdit = {
+                viewModel.showProductDetail(null)
+                viewModel.showEditProduct(prod)
+            },
+            onDelete = {
+                viewModel.showProductDetail(null)
+                viewModel.deleteProduct(prod.id)
+            },
             onAddSpec = { viewModel.openAddSpecDialog(prod) },
-            onAddReview = { viewModel.openAddReviewDialog(prod) },
-            onReviewClick = { viewModel.showReviewDetail(it) },
-            onEditReview = { viewModel.openEditReviewDialog(it) },
+            onAddReview = {
+                viewModel.showProductDetail(null)
+                viewModel.openAddReviewDialog(prod)
+            },
+            onReviewClick = {
+                viewModel.showProductDetail(null)
+                viewModel.showReviewDetail(it)
+            },
+            onEditReview = {
+                viewModel.showProductDetail(null)
+                viewModel.openEditReviewDialog(it)
+            },
             onDeleteSpec = { spec -> viewModel.deleteSpecification(spec.id) },
             onSaveSpec = { spec -> viewModel.saveSpecification(spec) },
             onDismiss = { viewModel.showProductDetail(null) }
@@ -552,12 +567,16 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
             onSaveProduct = { product, specs, isNew ->
                 viewModel.saveProductWithSpecifications(product, specs, isNew)
                 viewModel.showEditProduct(null)
+                viewModel.showProductDetail(product)
             },
             onDeleteProduct = { id ->
                 viewModel.deleteProduct(id)
                 viewModel.showEditProduct(null)
             },
-            onNavigateBack = { viewModel.showEditProduct(null) }
+            onNavigateBack = {
+                viewModel.showEditProduct(null)
+                viewModel.showProductDetail(prod)
+            }
         )
     }
 

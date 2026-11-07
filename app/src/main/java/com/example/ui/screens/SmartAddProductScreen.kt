@@ -48,6 +48,10 @@ import com.example.ui.components.HtmlWysiwygEditor
 import com.example.ui.components.SpecUnitBadge
 import com.example.ui.components.SpecificationsOrderModal
 import com.example.ui.components.TagBrandProductFilter
+import com.example.ui.components.AddSpecModal
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.ui.text.font.FontFamily
 import com.example.util.computeHierarchicalSpecOrder
 import com.example.util.buildInheritedBlankSpecs
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -63,10 +67,11 @@ fun SmartAddProductScreen(
     onNavigateToCompare: () -> Unit,
     onNavigateToCatalog: () -> Unit,
     onEditProduct: (ProductItem) -> Unit,
+    onViewProduct: (ProductItem) -> Unit = {},
     onDeleteProduct: (String) -> Unit,
     onCreateAndCompare: (String, String, List<String>, String?, (String) -> Unit) -> Unit,
     onAddSpecificationInline: (productId: String, productTitle: String, specName: String, details: String, unit: String?) -> Unit,
-    onUpdateInlineSpec: (productId: String, productTitle: String, specName: String, details: String, pictures: List<PictureItem>, unit: String?) -> Unit,
+    onUpdateInlineSpec: (productId: String, productTitle: String, specName: String, details: String, pictures: List<PictureItem>, unit: String?, isNumeric: Boolean?) -> Unit,
     onDeleteSpecInline: (productId: String, specName: String) -> Unit,
     onUpdateProductBrand: (productId: String, brand: String) -> Unit,
     onUpdateProductTags: (productId: String, tags: List<String>) -> Unit,
@@ -123,7 +128,10 @@ fun SmartAddProductScreen(
     // Inline editing states: key is "$productId|$specName"
     var activeInlineEditKey by remember { mutableStateOf<String?>(null) }
     var inlineSpecDetails by remember { mutableStateOf("") }
+    var inlineSpecUnit by remember { mutableStateOf("") }
+    var inlineIsNumeric by remember { mutableStateOf(false) }
     val inlineSpecPictures = remember { mutableStateListOf<PictureItem>() }
+    var modalSpecItem by remember { mutableStateOf<Triple<ProductItem, String, SpecificationItem?>?>(null) }
 
     // Inline brand editing state: productId -> editing
     var editingBrandProductId by remember { mutableStateOf<String?>(null) }
@@ -563,14 +571,14 @@ fun SmartAddProductScreen(
                                 }
 
                                 OutlinedButton(
-                                    onClick = { onEditProduct(slotProduct) },
+                                    onClick = { onViewProduct(slotProduct) },
                                     shape = RoundedCornerShape(10.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                     modifier = Modifier.height(34.dp)
                                 ) {
-                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(13.dp))
+                                    Icon(Icons.Default.Visibility, contentDescription = "View product", modifier = Modifier.size(13.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Specs", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("View product", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -1565,49 +1573,220 @@ fun SmartAddProductScreen(
                                 }
 
                                 if (isEditingThis) {
-                                    // Expanding inline sub-card editor (IMG_9629 / Smart add product 5)
+                                    // Expanding inline sub-card editor matching user's screenshot
                                     Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = Color(0xFFF8FAFC),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = Color.White,
+                                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF38BDF8)),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                            modifier = Modifier.padding(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(14.dp)
                                         ) {
-                                            Text("Specification", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF334155))
-                                            OutlinedTextField(
-                                                value = specName,
-                                                onValueChange = {},
-                                                readOnly = true,
-                                                modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(8.dp)
-                                            )
-
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text("Details", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF334155))
-                                                Text("WYSIWYG: Bold, underline, list & links", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                            // 1. Specification Field
+                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text(
+                                                    "Specification",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color(0xFF0F172A)
+                                                )
+                                                OutlinedTextField(
+                                                    value = specName,
+                                                    onValueChange = {},
+                                                    readOnly = true,
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    colors = OutlinedTextFieldDefaults.colors(
+                                                        focusedContainerColor = Color.White,
+                                                        unfocusedContainerColor = Color.White,
+                                                        focusedBorderColor = Color(0xFFCBD5E1),
+                                                        unfocusedBorderColor = Color(0xFFCBD5E1)
+                                                    )
+                                                )
                                             }
-                                            HtmlWysiwygEditor(
-                                                value = inlineSpecDetails,
-                                                onChange = { inlineSpecDetails = it },
-                                                placeholder = "Details, multi-line notes, or bold feature...",
-                                                minHeight = 90.dp,
-                                                testTagPrefix = "smart_add_spec_details"
-                                            )
 
-                                            // Photos picker
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
+                                            // 2. Unit (optional) Field
+                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text(
+                                                    "Unit (optional)",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color(0xFF0F172A)
+                                                )
+                                                OutlinedTextField(
+                                                    value = inlineSpecUnit,
+                                                    onValueChange = { inlineSpecUnit = it },
+                                                    placeholder = {
+                                                        Text(
+                                                            "e.g. g, mAh, mm",
+                                                            fontFamily = FontFamily.Monospace,
+                                                            color = Color(0xFF94A3B8),
+                                                            fontSize = 13.sp
+                                                        )
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    singleLine = true,
+                                                    colors = OutlinedTextFieldDefaults.colors(
+                                                        focusedContainerColor = Color.White,
+                                                        unfocusedContainerColor = Color.White,
+                                                        focusedBorderColor = Color(0xFFCBD5E1),
+                                                        unfocusedBorderColor = Color(0xFFCBD5E1)
+                                                    )
+                                                )
+
+                                                // Quick unit pills row
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .horizontalScroll(rememberScrollState()),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    Text(
+                                                        "Quick unit:",
+                                                        fontSize = 11.sp,
+                                                        color = Color(0xFF64748B),
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                    listOf("g", "kg", "inch", "cm", "mm", "year", "month", "mAh", "Hz", "$", "GB").forEach { qUnit ->
+                                                        val isSelected = inlineSpecUnit.equals(qUnit, ignoreCase = true)
+                                                        Surface(
+                                                            shape = RoundedCornerShape(6.dp),
+                                                            color = if (isSelected) Color(0xFFEEF2FF) else Color.White,
+                                                            border = androidx.compose.foundation.BorderStroke(
+                                                                1.dp,
+                                                                if (isSelected) Color(0xFF4F46E5) else Color(0xFFE2E8F0)
+                                                            ),
+                                                            modifier = Modifier.clickable { inlineSpecUnit = qUnit }
+                                                        ) {
+                                                            Text(
+                                                                text = qUnit,
+                                                                fontSize = 11.sp,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                                color = if (isSelected) Color(0xFF4F46E5) else Color(0xFF334155),
+                                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // 3. Numeric Comparison Card
+                                            Surface(
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = Color(0xFFFAFAFD),
+                                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                                modifier = Modifier.fillMaxWidth()
                                             ) {
-                                                Text("Specification pictures", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF475569))
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                    ) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            color = Color(0xFF4F46E5),
+                                                            modifier = Modifier.size(36.dp)
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Text(
+                                                                    text = "#",
+                                                                    color = Color.White,
+                                                                    fontSize = 15.sp,
+                                                                    fontWeight = FontWeight.ExtraBold
+                                                                )
+                                                            }
+                                                        }
+                                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "Numeric Comparison",
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 13.sp,
+                                                                    color = Color(0xFF0F172A)
+                                                                )
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    color = if (inlineIsNumeric) Color(0xFFEEF2FF) else Color(0xFFF1F5F9)
+                                                                ) {
+                                                                    Text(
+                                                                        text = if (inlineIsNumeric) "Number ON" else "Number OFF",
+                                                                        fontSize = 10.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        color = if (inlineIsNumeric) Color(0xFF4F46E5) else Color(0xFF64748B),
+                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                            Text(
+                                                                text = "Enables numerical comparison bar and Best value logic",
+                                                                fontSize = 11.sp,
+                                                                color = Color(0xFF64748B)
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Switch(
+                                                        checked = inlineIsNumeric,
+                                                        onCheckedChange = { inlineIsNumeric = it },
+                                                        colors = SwitchDefaults.colors(
+                                                            checkedThumbColor = Color.White,
+                                                            checkedTrackColor = Color(0xFF4F46E5),
+                                                            uncheckedThumbColor = Color.White,
+                                                            uncheckedTrackColor = Color(0xFFCBD5E1)
+                                                        )
+                                                    )
+                                                }
+                                            }
+
+                                            // 4. Specification details (single real WYSIWYG editor)
+                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        "Specification details",
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 13.sp,
+                                                        color = Color(0xFF0F172A)
+                                                    )
+                                                    Text(
+                                                        "Supports newlines, bold, italic & links",
+                                                        fontSize = 11.sp,
+                                                        color = Color(0xFF94A3B8)
+                                                    )
+                                                }
+                                                HtmlWysiwygEditor(
+                                                    value = inlineSpecDetails,
+                                                    onChange = { inlineSpecDetails = it },
+                                                    placeholder = "Details, multi-line notes, or bold feature...",
+                                                    minHeight = 110.dp,
+                                                    testTagPrefix = "smart_add_spec_details"
+                                                )
+                                            }
+
+                                            // 5. Specification pictures
+                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Text(
+                                                    "Specification pictures",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color(0xFF0F172A)
+                                                )
                                                 OutlinedButton(
                                                     onClick = {
                                                         photoPickerLauncher.launch(
@@ -1615,44 +1794,122 @@ fun SmartAddProductScreen(
                                                         )
                                                     },
                                                     shape = RoundedCornerShape(8.dp),
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFFF8FAFC)),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                                 ) {
-                                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(14.dp))
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text("Choose pictures", fontSize = 11.sp)
+                                                    Icon(
+                                                        Icons.Outlined.Image,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp),
+                                                        tint = Color(0xFF475569)
+                                                    )
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text(
+                                                        "Upload pictures",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = Color(0xFF334155)
+                                                    )
+                                                }
+
+                                                if (inlineSpecPictures.isNotEmpty()) {
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .horizontalScroll(rememberScrollState()),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        inlineSpecPictures.forEachIndexed { picIdx, pic ->
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(60.dp)
+                                                                    .clip(RoundedCornerShape(8.dp))
+                                                                    .background(Color(0xFFF8FAFC))
+                                                                    .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
+                                                            ) {
+                                                                AsyncImage(
+                                                                    model = resolveImageModel(LocalContext.current, pic.url, pic.name),
+                                                                    contentDescription = pic.name,
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    contentScale = ContentScale.Crop
+                                                                )
+                                                                Surface(
+                                                                    shape = CircleShape,
+                                                                    color = Color(0xCC000000),
+                                                                    modifier = Modifier
+                                                                        .size(18.dp)
+                                                                        .align(Alignment.TopEnd)
+                                                                        .padding(2.dp)
+                                                                        .clickable { inlineSpecPictures.removeAt(picIdx) }
+                                                                ) {
+                                                                    Icon(
+                                                                        Icons.Default.Close,
+                                                                        contentDescription = "Remove",
+                                                                        tint = Color.White,
+                                                                        modifier = Modifier.size(12.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
 
-                                            // Action buttons
+                                            // 6. Action buttons: Save, Cancel on left; Modal on right
                                             Row(
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                modifier = Modifier.fillMaxWidth()
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Button(
-                                                    onClick = {
-                                                        onUpdateInlineSpec(
-                                                            product.id,
-                                                            product.name,
-                                                            specName,
-                                                            inlineSpecDetails,
-                                                            inlineSpecPictures.toList(),
-                                                            existingSpec?.unit
-                                                        )
-                                                        activeInlineEditKey = null
-                                                    },
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A))
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
-                                                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text("Save", fontSize = 12.sp)
+                                                    Button(
+                                                        onClick = {
+                                                            onUpdateInlineSpec(
+                                                                product.id,
+                                                                product.name,
+                                                                specName,
+                                                                inlineSpecDetails,
+                                                                inlineSpecPictures.toList(),
+                                                                inlineSpecUnit.trim().ifBlank { null },
+                                                                inlineIsNumeric
+                                                            )
+                                                            activeInlineEditKey = null
+                                                        },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A)),
+                                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                                        Spacer(Modifier.width(6.dp))
+                                                        Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                                    }
+
+                                                    TextButton(
+                                                        onClick = { activeInlineEditKey = null },
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF475569))
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text("Cancel", fontSize = 12.sp, color = Color(0xFF475569), fontWeight = FontWeight.Medium)
+                                                    }
                                                 }
 
                                                 OutlinedButton(
-                                                    onClick = { activeInlineEditKey = null },
-                                                    shape = RoundedCornerShape(8.dp)
+                                                    onClick = {
+                                                        modalSpecItem = Triple(product, specName, existingSpec)
+                                                    },
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC7D2FE)),
+                                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                                 ) {
-                                                    Text("Cancel", fontSize = 12.sp)
+                                                    Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF4F46E5))
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text("Modal", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF4F46E5))
                                                 }
                                             }
                                         }
@@ -1663,13 +1920,17 @@ fun SmartAddProductScreen(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.Top,
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            FormattedSpecHtml(
-                                                content = existingSpec.details,
-                                                fontSize = 14.sp
-                                            )
+                                            Box(modifier = Modifier.weight(1f, fill = false)) {
+                                                FormattedSpecHtml(
+                                                    content = existingSpec.details,
+                                                    fontSize = 14.sp,
+                                                    lineHeight = 19.sp
+                                                )
+                                            }
                                             SpecUnitBadge(
                                                 unit = existingSpec.unit ?: activeUnit,
                                                 details = existingSpec.details
@@ -1716,6 +1977,8 @@ fun SmartAddProductScreen(
                                                 onClick = {
                                                     activeInlineEditKey = key
                                                     inlineSpecDetails = existingSpec.details
+                                                    inlineSpecUnit = existingSpec.unit ?: activeUnit ?: ""
+                                                    inlineIsNumeric = existingSpec.isNumeric ?: (!inlineSpecUnit.isBlank())
                                                     inlineSpecPictures.clear()
                                                     inlineSpecPictures.addAll(existingSpec.pictures)
                                                 },
@@ -1762,6 +2025,8 @@ fun SmartAddProductScreen(
                                             onClick = {
                                                 activeInlineEditKey = key
                                                 inlineSpecDetails = ""
+                                                inlineSpecUnit = existingSpec?.unit ?: activeUnit ?: ""
+                                                inlineIsNumeric = existingSpec?.isNumeric ?: (!inlineSpecUnit.isBlank())
                                                 inlineSpecPictures.clear()
                                             },
                                             shape = RoundedCornerShape(8.dp),
@@ -1833,7 +2098,8 @@ fun SmartAddProductScreen(
                         spec.specName,
                         spec.details,
                         spec.pictures,
-                        spec.unit
+                        spec.unit,
+                        spec.isNumeric
                     )
                 }
             },
@@ -1914,6 +2180,22 @@ fun SmartAddProductScreen(
                 specToDeleteInline = null
             },
             onDismiss = { specToDeleteInline = null }
+        )
+    }
+
+    modalSpecItem?.let { (modalProd, modalSpecName, modalExistingSpec) ->
+        AddSpecModal(
+            product = modalProd,
+            initialSpecName = modalSpecName,
+            initialUnit = inlineSpecUnit.ifBlank { modalExistingSpec?.unit ?: "" },
+            initialIsNumeric = inlineIsNumeric,
+            initialDetails = inlineSpecDetails.ifBlank { modalExistingSpec?.details ?: "" },
+            onAdd = { prodId, title, sName, details, unit, isNum ->
+                onUpdateInlineSpec(prodId, title, sName, details, inlineSpecPictures.toList(), unit, isNum)
+                modalSpecItem = null
+                activeInlineEditKey = null
+            },
+            onDismiss = { modalSpecItem = null }
         )
     }
 }

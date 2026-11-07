@@ -104,17 +104,12 @@ fun RichReviewViewer(
         if (linkedProduct != null) "${linkedProduct.name} Review" else "Review Report"
     }
 
-    // Format human-readable date
+    // Format human-readable date (handles epoch milliseconds or ISO timestamps like "2026-10-25T01:19:48.906Z")
     val formattedDate = remember(review.createdTime) {
         if (review.createdTime.isBlank()) {
             "Recent"
         } else {
-            try {
-                val ts = review.createdTime.toLong()
-                SimpleDateFormat("M/d/yyyy", Locale.US).format(Date(ts))
-            } catch (_: Exception) {
-                review.createdTime
-            }
+            formatBeautifulDate(review.createdTime)
         }
     }
 
@@ -222,10 +217,10 @@ fun RichReviewViewer(
                                     modifier = Modifier.size(19.dp)
                                 )
                             }
-                            Column(modifier = Modifier.padding(end = 4.dp)) {
+                            Column(modifier = Modifier.padding(end = 6.dp)) {
                                 Text(
                                     text = displayTitle,
-                                    fontSize = 14.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF0F172A),
                                     maxLines = 1,
@@ -233,7 +228,7 @@ fun RichReviewViewer(
                                 )
                                 Text(
                                     text = "Review #${review.reviewNumber} • ${linkedProduct?.name ?: "Community Review"}",
-                                    fontSize = 11.sp,
+                                    fontSize = 12.sp,
                                     color = Color(0xFF64748B),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -241,12 +236,12 @@ fun RichReviewViewer(
                             }
                         }
 
-                        // Actions Row: Word-style Zoom Pill + Edit & Delete Buttons
+                        // Actions Row: Zoom Pill, Edit Button (Dark Pill) & Delete Button (Trash Icon)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            // Word-Style Zoom Pill [- 85% +]
+                            // Zoom Control Pill: [- 85% +] with Preset Dropdown Menu
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = Color(0xFFF1F5F9),
@@ -263,12 +258,17 @@ fun RichReviewViewer(
                                             zoomPercent = (zoomPercent - 10).coerceAtLeast(50)
                                             webViewInstance?.let { wv ->
                                                 wv.settings.textZoom = zoomPercent
-                                                wv.evaluateJavascript("document.body.style.zoom = '${zoomPercent}%';", null)
+                                                wv.evaluateJavascript("if (document.body) { document.body.style.zoom = '${zoomPercent}%'; }", null)
                                             }
                                         },
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(26.dp)
                                     ) {
-                                        Icon(Icons.Default.Remove, contentDescription = "Zoom out", modifier = Modifier.size(13.dp), tint = Color(0xFF334155))
+                                        Icon(
+                                            Icons.Default.Remove,
+                                            contentDescription = "Zoom out",
+                                            modifier = Modifier.size(13.dp),
+                                            tint = Color(0xFF334155)
+                                        )
                                     }
 
                                     Box {
@@ -281,7 +281,6 @@ fun RichReviewViewer(
                                                 .clickable { showZoomMenu = true }
                                                 .padding(horizontal = 3.dp, vertical = 2.dp)
                                         )
-
                                         DropdownMenu(
                                             expanded = showZoomMenu,
                                             onDismissRequest = { showZoomMenu = false }
@@ -300,7 +299,7 @@ fun RichReviewViewer(
                                                         zoomPercent = preset
                                                         webViewInstance?.let { wv ->
                                                             wv.settings.textZoom = zoomPercent
-                                                            wv.evaluateJavascript("document.body.style.zoom = '${zoomPercent}%';", null)
+                                                            wv.evaluateJavascript("if (document.body) { document.body.style.zoom = '${zoomPercent}%'; }", null)
                                                         }
                                                         showZoomMenu = false
                                                     }
@@ -314,45 +313,57 @@ fun RichReviewViewer(
                                             zoomPercent = (zoomPercent + 10).coerceAtMost(200)
                                             webViewInstance?.let { wv ->
                                                 wv.settings.textZoom = zoomPercent
-                                                wv.evaluateJavascript("document.body.style.zoom = '${zoomPercent}%';", null)
+                                                wv.evaluateJavascript("if (document.body) { document.body.style.zoom = '${zoomPercent}%'; }", null)
                                             }
                                         },
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(26.dp)
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = "Zoom in", modifier = Modifier.size(13.dp), tint = Color(0xFF334155))
+                                        Icon(
+                                            Icons.Default.Add,
+                                            contentDescription = "Zoom in",
+                                            modifier = Modifier.size(13.dp),
+                                            tint = Color(0xFF334155)
+                                        )
                                     }
                                 }
                             }
 
-                            Button(
-                                onClick = { onEditReview(review) },
+                            Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF0F172A),
-                                    contentColor = Color.White
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                modifier = Modifier.height(30.dp)
+                                color = Color(0xFF0F172A),
+                                modifier = Modifier
+                                    .clickable { onEditReview(review) }
+                                    .testTag("viewer_edit_btn")
                             ) {
-                                Icon(
-                                    Icons.Default.Edit,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(Modifier.width(3.dp))
-                                Text("Edit", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = "Edit",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "Edit",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
 
                             IconButton(
                                 onClick = { showDeleteConfirm = true },
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(34.dp).testTag("viewer_delete_btn")
                             ) {
                                 Icon(
                                     Icons.Default.DeleteOutline,
                                     contentDescription = "Delete",
                                     tint = Color(0xFF94A3B8),
-                                    modifier = Modifier.size(17.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -882,11 +893,19 @@ private fun buildViewerHtml(
         }
     }
 
-    // Build Product Box HTML
+    // Build Product Box HTML matching beautiful review header.jpg
     val productHtml = if (linkedProduct != null) {
-        val thumbUrl = linkedProduct.pictures.firstOrNull()?.url ?: ""
+        val rawThumb = linkedProduct.pictures.firstOrNull()?.url ?: ""
+        val thumbUrl = when {
+            rawThumb.startsWith("http://") || rawThumb.startsWith("https://") -> rawThumb
+            rawThumb.isNotBlank() -> {
+                val fn = rawThumb.substringAfterLast('/').substringBefore('?')
+                "https://local.review/pictures/$fn"
+            }
+            else -> ""
+        }
         val thumbElement = if (thumbUrl.isNotBlank()) {
-            "<img src=\"$thumbUrl\" class=\"prod-avatar\" alt=\"${linkedProduct.name}\" />"
+            "<img src=\"$thumbUrl\" class=\"prod-avatar\" alt=\"${linkedProduct.name}\" onerror=\"this.style.display='none'\" />"
         } else {
             "<div class=\"prod-avatar-placeholder\">📦</div>"
         }
@@ -898,7 +917,7 @@ private fun buildViewerHtml(
             <div class="prod-name">${linkedProduct.brand} ${linkedProduct.name}</div>
           </div>
           <button type="button" class="view-prod-btn" onclick="window.AndroidBridge.viewProduct('${linkedProduct.id}')">
-            View ↗
+            View Product ↗
           </button>
         </div>
         """.trimIndent()
@@ -1018,14 +1037,18 @@ private fun buildViewerHtml(
               margin-bottom: 12px;
             }
             
-            .prod-avatar {
-              width: 38px;
-              height: 38px;
+            img.prod-avatar, .prod-avatar {
+              width: 44px !important;
+              height: 44px !important;
+              min-height: 44px !important;
+              max-height: 44px !important;
               border-radius: 8px;
-              object-fit: contain;
+              object-fit: cover !important;
               background: #f8fafc;
               border: 1px solid #e2e8f0;
               padding: 2px;
+              margin: 0 !important;
+              display: block;
               flex-shrink: 0;
             }
             
@@ -1141,19 +1164,17 @@ private fun buildViewerHtml(
               line-height: 1.6;
             }
             
-            img {
+            .review-body-content img, .attached-section img {
               max-width: 100%;
               height: auto;
               object-fit: contain;
               background-color: #f8fafc;
-              border-radius: 10px;
+              border-radius: 8px;
               border: 1px solid #e2e8f0;
-              margin: 12px auto;
+              margin: 8px auto;
               display: block;
               cursor: pointer;
               box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-              content-visibility: auto;
-              min-height: 120px;
             }
 
             .review-figure {

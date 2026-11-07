@@ -78,6 +78,7 @@ fun ActiveTabContent(
                     onNavigateToCompare = { viewModel.setActiveTab(AppNavTab.COMPARE) },
                     onNavigateToCatalog = { viewModel.setActiveTab(AppNavTab.CATALOG) },
                     onEditProduct = { viewModel.showEditProduct(it) },
+                    onViewProduct = { viewModel.showProductDetail(it) },
                     onDeleteProduct = { viewModel.deleteProduct(it) },
                     onCreateAndCompare = { name, brand, inheritSpecs, explicitId, onCreated ->
                         viewModel.createAndCompare(name, brand, inheritSpecs, explicitId, onCreated)
@@ -85,8 +86,8 @@ fun ActiveTabContent(
                     onAddSpecificationInline = { prodId, title, name, details, unit ->
                         viewModel.addSpecification(prodId, title, name, details, unit)
                     },
-                    onUpdateInlineSpec = { prodId, title, name, details, pics, unit ->
-                        viewModel.updateInlineSpec(prodId, title, name, details, pics, unit)
+                    onUpdateInlineSpec = { prodId, title, name, details, pics, unit, isNum ->
+                        viewModel.updateInlineSpec(prodId, title, name, details, pics, unit, isNum)
                     },
                     onDeleteSpecInline = { prodId, name ->
                         viewModel.deleteSpecInline(prodId, name)

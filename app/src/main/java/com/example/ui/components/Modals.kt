@@ -570,21 +570,21 @@ fun ProductDetailModal(
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color(0xFF64748B),
-                                                modifier = Modifier.width(24.dp)
+                                                modifier = Modifier.width(22.dp)
                                             )
                                             Text(
                                                 text = "SPECIFICATION",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color(0xFF64748B),
-                                                modifier = Modifier.weight(0.30f)
+                                                modifier = Modifier.weight(0.28f)
                                             )
                                             Text(
                                                 text = "DETAILS / VALUE",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color(0xFF64748B),
-                                                modifier = Modifier.weight(0.48f)
+                                                modifier = Modifier.weight(0.54f)
                                             )
                                             Text(
                                                 text = "ACTIONS",
@@ -592,7 +592,7 @@ fun ProductDetailModal(
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color(0xFF64748B),
                                                 textAlign = TextAlign.End,
-                                                modifier = Modifier.width(56.dp)
+                                                modifier = Modifier.width(52.dp)
                                             )
                                         }
                                     }
@@ -604,7 +604,7 @@ fun ProductDetailModal(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(24.dp),
-                                            contentAlignment = Alignment.Center
+                                                contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 "No specifications recorded for this product.",
@@ -626,7 +626,7 @@ fun ProductDetailModal(
                                                     fontSize = 12.sp,
                                                     color = Color(0xFF94A3B8),
                                                     modifier = Modifier
-                                                        .width(24.dp)
+                                                        .width(22.dp)
                                                         .padding(top = 2.dp)
                                                 )
 
@@ -637,14 +637,14 @@ fun ProductDetailModal(
                                                     fontWeight = FontWeight.Bold,
                                                     color = Color(0xFF0F172A),
                                                     modifier = Modifier
-                                                        .weight(0.30f)
+                                                        .weight(0.28f)
                                                         .padding(top = 2.dp)
                                                 )
 
                                                 // Column 3: DETAILS / VALUE
                                                 Column(
-                                                    modifier = Modifier.weight(0.48f),
-                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                    modifier = Modifier.weight(0.54f),
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                                 ) {
                                                     FormattedSpecHtml(
                                                         content = spec.details,
@@ -905,52 +905,98 @@ fun ProductDetailModal(
                                                     }
                                                 }
 
-                                                // Clean rich text review body with zero raw HTML tags
-                                                FormattedSpecHtml(
-                                                    content = review.body,
-                                                    fontSize = 13.sp,
-                                                    lineHeight = 19.sp,
-                                                    color = Color(0xFF334155)
-                                                )
+                                                 // Extract all pictures (explicit + embedded markdown/HTML images)
+                                                 val reviewPictures = remember(review) {
+                                                     val list = mutableListOf<PictureItem>()
+                                                     if (review.pictures.isNotEmpty()) list.addAll(review.pictures)
+                                                     val imgRegex = Regex("""<img\b([^>]*)>""", RegexOption.IGNORE_CASE)
+                                                     imgRegex.findAll(review.body).forEachIndexed { idx, match ->
+                                                         val attrs = match.groupValues[1]
+                                                         val src = Regex("""src=["']([^"']*)["']""", RegexOption.IGNORE_CASE).find(attrs)?.groupValues?.get(1)?.trim() ?: ""
+                                                         val attId = Regex("""(?:data-attachment-id|dataAttachmentId|data-attachment-token)=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(attrs)?.groupValues?.get(1)?.trim() ?: ""
+                                                         val alt = Regex("""alt=["']([^"']*)["']""", RegexOption.IGNORE_CASE).find(attrs)?.groupValues?.get(1)?.trim() ?: "Photo ${list.size + 1}"
+                                                         val effectiveUrl = when {
+                                                             src.isNotBlank() && !src.startsWith("blob:") -> src
+                                                             attId.isNotBlank() -> "https://local.review/review_images/$attId"
+                                                             else -> ""
+                                                         }
+                                                         if (effectiveUrl.isNotBlank() && list.none { it.url == effectiveUrl || (attId.isNotBlank() && it.id == attId) }) {
+                                                             list.add(PictureItem(id = attId.ifBlank { "card_img_$idx" }, name = alt, url = effectiveUrl))
+                                                         }
+                                                     }
+                                                     val mdImgRegex = Regex("""!\[(.*?)\]\((.*?)\)""")
+                                                     mdImgRegex.findAll(review.body).forEachIndexed { idx, match ->
+                                                         val alt = match.groupValues[1].ifBlank { "Photo ${list.size + 1}" }
+                                                         val url = match.groupValues[2].trim()
+                                                         if (url.isNotBlank() && list.none { it.url == url }) {
+                                                             list.add(PictureItem(id = "md_img_$idx", name = alt, url = url))
+                                                         }
+                                                     }
+                                                     list
+                                                 }
 
-                                                // Thumbnail pictures gallery (if present)
-                                                if (review.pictures.isNotEmpty()) {
-                                                    Row(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .horizontalScroll(rememberScrollState()),
-                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                    ) {
-                                                        review.pictures.forEachIndexed { picIndex, pic ->
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(64.dp)
-                                                                    .clip(RoundedCornerShape(10.dp))
-                                                                    .background(Color(0xFFF8FAFC))
-                                                                    .border(
-                                                                        1.dp,
-                                                                        Color(0xFFCBD5E1),
-                                                                        RoundedCornerShape(10.dp)
-                                                                    )
-                                                                    .clickable {
-                                                                        activeLightboxImages = review.pictures
-                                                                        activeLightboxIndex = picIndex
-                                                                    }
-                                                            ) {
-                                                                AsyncImage(
-                                                                    model = resolveImageModel(
-                                                                        LocalContext.current,
-                                                                        pic.url,
-                                                                        preferredName = pic.name
-                                                                    ),
-                                                                    contentDescription = pic.name,
-                                                                    modifier = Modifier.fillMaxSize(),
-                                                                    contentScale = ContentScale.Crop
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                }
+                                                 // Clean rich text review snippet with zero raw HTML tags or image URLs
+                                                 val cleanPreviewText = remember(review.body) {
+                                                     var text = review.body
+                                                     text = text.replace(Regex("""!\[.*?\]\(.*?\)"""), " ")
+                                                     text = text.replace(Regex("""<figure\b[^>]*>[\s\S]*?<\/figure>""", RegexOption.IGNORE_CASE), " ")
+                                                     text = text.replace(Regex("""<img\b[^>]*>""", RegexOption.IGNORE_CASE), " ")
+                                                     text = text.replace(Regex("""https?://local\.review/[^\s<>"'\)]+""", RegexOption.IGNORE_CASE), " ")
+                                                     text = text.replace(Regex("""<[^>]*>"""), " ")
+                                                     text = text.replace(Regex("""\s+"""), " ").trim()
+                                                     text
+                                                 }
+
+                                                 if (cleanPreviewText.isNotBlank()) {
+                                                     Text(
+                                                         text = cleanPreviewText,
+                                                         fontSize = 13.sp,
+                                                         lineHeight = 19.sp,
+                                                         color = Color(0xFF334155),
+                                                         maxLines = 3,
+                                                         overflow = TextOverflow.Ellipsis,
+                                                         modifier = Modifier.clickable { onReviewClick(review) }
+                                                     )
+                                                 }
+
+                                                 // Thumbnail pictures gallery
+                                                 if (reviewPictures.isNotEmpty()) {
+                                                     Row(
+                                                         modifier = Modifier
+                                                             .fillMaxWidth()
+                                                             .horizontalScroll(rememberScrollState()),
+                                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                     ) {
+                                                         reviewPictures.forEachIndexed { picIndex, pic ->
+                                                             Box(
+                                                                 modifier = Modifier
+                                                                     .size(64.dp)
+                                                                     .clip(RoundedCornerShape(10.dp))
+                                                                     .background(Color(0xFFF8FAFC))
+                                                                     .border(
+                                                                         1.dp,
+                                                                         Color(0xFFCBD5E1),
+                                                                         RoundedCornerShape(10.dp)
+                                                                     )
+                                                                     .clickable {
+                                                                         activeLightboxImages = reviewPictures
+                                                                         activeLightboxIndex = picIndex
+                                                                     }
+                                                             ) {
+                                                                 AsyncImage(
+                                                                     model = resolveImageModel(
+                                                                         LocalContext.current,
+                                                                         pic.url,
+                                                                         preferredName = pic.name
+                                                                     ),
+                                                                     contentDescription = pic.name,
+                                                                     modifier = Modifier.fillMaxSize(),
+                                                                     contentScale = ContentScale.Crop
+                                                                 )
+                                                             }
+                                                         }
+                                                     }
+                                                 }
                                             }
                                         }
                                     }
@@ -995,68 +1041,18 @@ fun ProductDetailModal(
 
     if (editingSpec != null) {
         val specToEdit = editingSpec!!
-        var editName by remember(specToEdit) { mutableStateOf(specToEdit.specName) }
-        var editDetails by remember(specToEdit) { mutableStateOf(specToEdit.details) }
-        var editUnit by remember(specToEdit) { mutableStateOf(specToEdit.unit ?: "") }
-
-        AlertDialog(
-            onDismissRequest = { editingSpec = null },
-            title = {
-                Text(
-                    "Edit Specification",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color(0xFF0F172A)
-                )
+        EditSpecModal(
+            specification = specToEdit,
+            onSave = { updated ->
+                onSaveSpec?.invoke(updated)
+                onEditSpec?.invoke(updated)
+                editingSpec = null
             },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text("Specification Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editDetails,
-                        onValueChange = { editDetails = it },
-                        label = { Text("Details / Value") },
-                        minLines = 3,
-                        maxLines = 6,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editUnit,
-                        onValueChange = { editUnit = it },
-                        label = { Text("Unit (optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+            onDelete = { specId ->
+                onDeleteSpec?.invoke(specToEdit)
+                editingSpec = null
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val updated = specToEdit.copy(
-                            specName = editName.trim(),
-                            details = editDetails.trim(),
-                            unit = editUnit.trim().ifBlank { null }
-                        )
-                        onSaveSpec?.invoke(updated)
-                        onEditSpec?.invoke(updated)
-                        editingSpec = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
-                ) {
-                    Text("Save Changes")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingSpec = null }) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { editingSpec = null }
         )
     }
 
@@ -1352,13 +1348,17 @@ fun AddProductModal(
 @Composable
 fun AddSpecModal(
     product: ProductItem,
+    initialSpecName: String = "",
+    initialUnit: String = "",
+    initialIsNumeric: Boolean? = null,
+    initialDetails: String = "",
     onAdd: (productId: String, productTitle: String, specName: String, details: String, unit: String?, isNumeric: Boolean?) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var specName by remember { mutableStateOf("") }
-    var details by remember { mutableStateOf("") }
-    var unit by remember { mutableStateOf("") }
-    var isNumeric by remember { mutableStateOf<Boolean?>(null) }
+    var specName by remember { mutableStateOf(initialSpecName) }
+    var details by remember { mutableStateOf(initialDetails) }
+    var unit by remember { mutableStateOf(initialUnit) }
+    var isNumeric by remember { mutableStateOf<Boolean?>(initialIsNumeric) }
 
     BackHandler { onDismiss() }
 
@@ -1495,7 +1495,7 @@ fun AddSpecModal(
                     // Numeric Comparison Mode Toggle
                     item {
                         val hasNumericCandidate = remember(details) {
-                            val clean = details.replace(Regex("<[^>]*>"), "").trim()
+                            val clean = htmlToPlainText(details)
                             !clean.contains('\n') && !clean.contains('•') && clean.length <= 45 && Regex("[0-9]").containsMatchIn(clean)
                         }
 
@@ -1870,7 +1870,7 @@ fun EditSpecModal(
                                             shape = RoundedCornerShape(6.dp),
                                             color = if (isSelected) Color(0xFF4F46E5) else Color(0xFFF1F5F9),
                                             border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF4F46E5) else Color(0xFFCBD5E1)),
-                                            modifier = Modifier.clickable { unit = qUnit }
+                                            modifier = Modifier.clickable { unit = if (isSelected) "" else qUnit }
                                         ) {
                                             Text(
                                                 text = qUnit,
@@ -1886,69 +1886,86 @@ fun EditSpecModal(
                         }
                     }
 
-                    // Numeric Comparison Mode Toggle Card
+                    // Numeric Comparison Mode Toggle Card with Switch & Mode Selectors
                     item {
                         val hasNumericCandidate = remember(details) {
-                            val clean = details.replace(Regex("<[^>]*>"), "").trim()
+                            val clean = htmlToPlainText(details)
                             !clean.contains('\n') && !clean.contains('•') && clean.length <= 45 && Regex("[0-9]").containsMatchIn(clean)
                         }
 
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = Color.White,
+                            color = Color(0xFFFAFAFD),
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = when (isNumeric) {
-                                            true -> Color(0xFF4F46E5)
-                                            false -> Color(0xFF475569)
-                                            null -> Color(0xFF0F172A)
-                                        },
-                                        modifier = Modifier.size(32.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        Box(contentAlignment = Alignment.Center) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = Color(0xFF4F46E5),
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = "#",
+                                                    color = Color.White,
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            }
+                                        }
+
+                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Numeric Comparison",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color(0xFF0F172A)
+                                                )
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = if (isNumeric == true) Color(0xFFEEF2FF) else Color(0xFFF1F5F9)
+                                                ) {
+                                                    Text(
+                                                        text = if (isNumeric == true) "Number ON" else "Number OFF",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isNumeric == true) Color(0xFF4F46E5) else Color(0xFF64748B),
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
                                             Text(
-                                                text = when (isNumeric) {
-                                                    true -> "#"
-                                                    false -> "Aa"
-                                                    null -> "⚡"
-                                                },
-                                                color = Color.White,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Bold
+                                                text = "Enables numerical comparison bar and Best value logic",
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF64748B)
                                             )
                                         }
                                     }
 
-                                    Column {
-                                        Text(
-                                            text = when (isNumeric) {
-                                                true -> "Numeric Comparison (Forced #)"
-                                                false -> "Text Mode (Forced Aa)"
-                                                null -> "Auto-Detect Mode"
-                                            },
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = Color(0xFF0F172A)
+                                    Switch(
+                                        checked = isNumeric == true,
+                                        onCheckedChange = { isNumeric = if (it) true else false },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.White,
+                                            checkedTrackColor = Color(0xFF4F46E5),
+                                            uncheckedThumbColor = Color.White,
+                                            uncheckedTrackColor = Color(0xFFCBD5E1)
                                         )
-                                        Text(
-                                            text = when (isNumeric) {
-                                                true -> "Extracted as numeric value for matrix bar charts and higher/lower comparison"
-                                                false -> "Preserved strictly as text/descriptive narrative without numeric sorting"
-                                                null -> if (hasNumericCandidate) "Auto-detected: Numbers found in text" else "Auto-detected: Descriptive text"
-                                            },
-                                            fontSize = 11.sp,
-                                            color = Color(0xFF64748B)
-                                        )
-                                    }
+                                    )
                                 }
 
                                 Row(
@@ -1999,8 +2016,8 @@ fun EditSpecModal(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Specification Value / Details *", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF334155))
-                                    Text("WYSIWYG: Bold, underline, list & links", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    Text("Specification details", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF0F172A))
+                                    Text("Supports newlines, bold, italic & links", fontSize = 11.sp, color = Color(0xFF94A3B8))
                                 }
 
                                 HtmlWysiwygEditor(
@@ -2752,9 +2769,10 @@ fun SpecificationsOrderModal(
                                             color = Color(0xFF0F172A)
                                         )
                                         if (spec.details.isNotBlank()) {
-                                            Text(
-                                                spec.details + if (!spec.unit.isNullOrBlank()) " ${spec.unit}" else "",
+                                            FormattedSpecHtml(
+                                                content = spec.details,
                                                 fontSize = 11.sp,
+                                                lineHeight = 15.sp,
                                                 color = Color(0xFF64748B)
                                             )
                                         }

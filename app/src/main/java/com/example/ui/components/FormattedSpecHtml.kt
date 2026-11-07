@@ -28,6 +28,36 @@ import java.util.Date
 import java.util.Locale
 
 /**
+ * Converts HTML/Rich text to clean plain text, reliably preserving newlines (\n)
+ * from <br>, </p>, </div>, </li>, </tr>, and raw newlines without joining adjacent words together.
+ */
+fun htmlToPlainText(html: String?): String {
+    if (html.isNullOrBlank()) return ""
+    var text = html
+    // 0. Normalize escaped literal "\n" strings to real newlines
+    text = text.replace("\\n", "\n")
+    // 1. Convert <br> or <br/> to newline
+    text = text.replace(Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE), "\n")
+    text = text.replace(Regex("""&lt;br\s*/?&gt;""", RegexOption.IGNORE_CASE), "\n")
+    // 2. Convert block closing tags </p>, </div>, </li>, </tr>, </h[1-6]> to newline
+    text = text.replace(Regex("""</(p|div|li|tr|h[1-6])>""", RegexOption.IGNORE_CASE), "\n")
+    // 3. Convert block opening tags <p>, <div>, <li>, <tr>, <h[1-6]> to newline
+    text = text.replace(Regex("""<(p|div|li|tr|h[1-6])\b[^>]*>""", RegexOption.IGNORE_CASE), "\n")
+    // 4. Strip remaining HTML tags
+    text = text.replace(Regex("""<[^>]*>"""), "")
+    // 5. Decode common HTML entities
+    text = text.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+    // 6. Clean up line-by-line whitespace while strictly preserving line breaks
+    val cleanedLines = text.split("\n").map { it.trim() }
+    return cleanedLines.joinToString("\n").replace(Regex("""\n{3,}"""), "\n\n").trim()
+}
+
+/**
  * Prepares and normalizes specification details or review summaries as rich text,
  * properly respecting newlines, bullet points (- Item, • Item), markdown (**bold**, *italic*),
  * and safe HTML/markdown tags (<b>, <strong>, <i>, <u>, <a>, <br>).
@@ -36,21 +66,29 @@ fun formatSpecificationDetails(rawText: String?): String {
     if (rawText.isNullOrBlank()) return ""
     var formatted = rawText
 
+    // 0. Remove markdown images (![alt](url)) and html img tags so raw images/asset URLs never leak into text
+    formatted = formatted.replace(Regex("""!\[.*?\]\(.*?\)"""), "")
+    formatted = formatted.replace(Regex("""<img\b[^>]*>""", RegexOption.IGNORE_CASE), "")
+    formatted = formatted.replace(Regex("""<figure\b[^>]*>[\s\S]*?<\/figure>""", RegexOption.IGNORE_CASE), "")
+    formatted = formatted.replace(Regex("""https?://local\.review/[^\s<>"'\)]+""", RegexOption.IGNORE_CASE), "")
+
     // 1. Normalize escaped literal "\n" strings to real newlines
     formatted = formatted.replace("\\n", "\n")
 
-    // 2. Normalize <br> or <br/> tags to newlines for cleaner text flow
+    // 2. Normalize <br> or <br/> or &lt;br&gt; tags to newlines for cleaner text flow
     formatted = formatted.replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+    formatted = formatted.replace(Regex("&lt;br\\s*/?&gt;", RegexOption.IGNORE_CASE), "\n")
 
-    // 3. Clean up inline dashes like "from a distance. - Wide-Stereo" -> newlines with bullets
-    formatted = formatted.replace(Regex("([.!?]|\\w|>)\\s+-\\s+([A-Z0-9<])"), "$1\n• $2")
-
-    // 4. Handle start of string dashes: "- Item" -> "• Item"
-    formatted = formatted.replace(Regex("(?m)^-\\s+"), "• ")
+    // 3. Clean up inline dashes after punctuation: "from a distance. - Wide-Stereo" -> newlines with dash
+    // Preserves literal dashes without mutating to bullet points or dots
+    formatted = formatted.replace(Regex("([.!?]|>)\\s+-\\s+([A-Za-z0-9<])"), "$1\n- $2")
 
     // 5. Sanitize scripts or dangerous iframes
     formatted = formatted.replace(Regex("<script\\b[^<]*(?:(?!</script>)<[^<]*)*</script>", RegexOption.IGNORE_CASE), "")
     formatted = formatted.replace(Regex("<iframe\\b[^<]*(?:(?!</iframe>)<[^<]*)*</iframe>", RegexOption.IGNORE_CASE), "")
+
+    // 6. Collapse excessive blank lines and trim leading/trailing empty lines
+    formatted = formatted.replace(Regex("""\n{3,}"""), "\n\n").trim()
 
     return formatted
 }
@@ -66,10 +104,14 @@ fun normalizeRawLinks(text: String): String {
     var result = text.replace(Regex("<a\\s+[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", RegexOption.IGNORE_CASE)) { match ->
         val url = match.groupValues[1].trim()
         val label = match.groupValues[2].trim().ifBlank { url }
-        "[$label]($url)"
+        if (url.contains("local.review") || url.contains("review_images") || url.contains("att_asset")) {
+            ""
+        } else {
+            "[$label]($url)"
+        }
     }
 
-    // 2. Convert raw app schemes and web URLs into [label](url)
+    // 2. Convert raw app schemes and web URLs into [label](url), skipping internal review image assets
     val rawUrlPattern = Regex("""(?<!\]\()(?<!href=["'])\b((?:https?|upnote|marginnote\w*|obsidian|notion|craftdocs|bear|things|onenote|goodnotes|notability|logseq)://[^\s<>"'\)]+)""", RegexOption.IGNORE_CASE)
     result = rawUrlPattern.replace(result) { match ->
         var raw = match.value
@@ -79,8 +121,8 @@ fun normalizeRawLinks(text: String): String {
             trailing = raw.takeLast(1) + trailing
             raw = raw.dropLast(1)
         }
-        if (raw.isBlank()) {
-            match.value
+        if (raw.isBlank() || raw.contains("local.review") || raw.contains("review_images") || raw.contains("att_asset")) {
+            ""
         } else {
             val label = getSchemeDisplayName(raw)
             "[$label]($raw)$trailing"
@@ -171,15 +213,16 @@ fun parseRichTextToAnnotatedString(
 
     // 2. Use parseHtmlToRichText to extract clean plain text and style spans
     val (plain, spans) = parseHtmlToRichText(linkNormalized)
-    if (plain.isEmpty()) {
+    val trimmedPlain = plain.trimEnd('\r', '\n')
+    if (trimmedPlain.isEmpty()) {
         return AnnotatedString("")
     }
 
     return buildAnnotatedString {
-        append(plain)
+        append(trimmedPlain)
         for (span in spans) {
-            val s = span.start.coerceIn(0, plain.length)
-            val e = span.end.coerceIn(0, plain.length)
+            val s = span.start.coerceIn(0, trimmedPlain.length)
+            val e = span.end.coerceIn(0, trimmedPlain.length)
             if (s >= e) continue
 
             if (span.isBold) {
@@ -262,7 +305,7 @@ fun FormattedSpecHtml(
  */
 fun hasUnitSuffix(text: String?, unit: String?): Boolean {
     if (text.isNullOrBlank() || unit.isNullOrBlank()) return false
-    val cleanText = text.replace(Regex("<[^>]*>"), "").trim().lowercase()
+    val cleanText = htmlToPlainText(text).lowercase()
     val cleanUnit = unit.trim().lowercase()
     if (cleanText.isEmpty() || cleanUnit.isEmpty()) return false
 

@@ -47,6 +47,7 @@ import com.example.ui.components.DeleteConfirmDialog
 import com.example.ui.components.FormattedSpecHtml
 import com.example.ui.components.HtmlWysiwygEditor
 import com.example.ui.components.SpecUnitBadge
+import com.example.ui.components.htmlToPlainText
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -1406,7 +1407,7 @@ fun ProductWorkspaceScreen(
 
                                     // Numeric Comparison Override Selector
                                     val hasNumericCandidate = remember(spec.details) {
-                                        val clean = spec.details.replace(Regex("<[^>]*>"), "").trim()
+                                        val clean = htmlToPlainText(spec.details)
                                         !clean.contains('\n') && !clean.contains('•') && clean.length <= 45 && Regex("[0-9]").containsMatchIn(clean)
                                     }
 

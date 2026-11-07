@@ -26,6 +26,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,6 +48,7 @@ import com.example.ui.components.FormattedSpecHtml
 import com.example.ui.components.FullScreenPhotoLightbox
 import com.example.ui.components.SpecUnitBadge
 import com.example.ui.components.TagBrandProductFilter
+import com.example.ui.components.htmlToPlainText
 import com.example.util.computeHierarchicalSpecOrder
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -495,7 +497,7 @@ fun CompareScreen(
                             reviewsCount = revCount,
                             onSelectSlot = { slotIndexToPick = index },
                             onRemoveSlot = { slotToRemoveIndex = index },
-                            onEditProduct = onEditProduct,
+                            onViewProduct = onProductClick,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -513,7 +515,7 @@ fun CompareScreen(
                     reviewsCount = revCount,
                     onSelectSlot = { slotIndexToPick = index },
                     onRemoveSlot = { slotToRemoveIndex = index },
-                    onEditProduct = onEditProduct
+                    onViewProduct = onProductClick
                 )
             }
         }
@@ -524,14 +526,16 @@ fun CompareScreen(
         if (activeProducts.size >= 2) {
             val isBrandDiff = activeProducts.map { it.brand.trim().lowercase() }.distinct().size > 1
             val isTagsDiff = activeProducts.map { it.tags.sorted().joinToString(",").lowercase() }.distinct().size > 1
+            val isOverviewDiff = activeProducts.map { it.overview.trim().lowercase() }.distinct().size > 1
+            val isPicturesDiff = activeProducts.map { p -> p.pictures.map { it.url }.sorted().joinToString(",") }.distinct().size > 1
             val diffSpecsCount = distinctSpecNames.count { specName ->
                 val vals = activeProducts.map { p ->
                     activeSpecs.find { (it.productId == p.id || it.productTitle == p.name) && it.specName.equals(specName, ignoreCase = true) }?.details.orEmpty().trim().lowercase()
                 }.distinct()
                 vals.size > 1
             }
-            val totalDifferCount = (if (isBrandDiff) 1 else 0) + (if (isTagsDiff) 1 else 0) + diffSpecsCount
-            val totalFieldsCount = 2 + distinctSpecNames.size
+            val totalDifferCount = (if (isOverviewDiff) 1 else 0) + (if (isPicturesDiff) 1 else 0) + (if (isBrandDiff) 1 else 0) + (if (isTagsDiff) 1 else 0) + diffSpecsCount
+            val totalFieldsCount = 4 + distinctSpecNames.size
 
             item {
                 Spacer(Modifier.height(8.dp))
@@ -591,7 +595,240 @@ fun CompareScreen(
                 }
             }
 
-            // Brand Comparison Card (IMG_0002)
+            // 1. Overview Comparison Card (missing in compare.jpg)
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isOverviewDiff) Color(0xFFFEFCE8) else Color.White
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isOverviewDiff) Color(0xFFFDE047) else Color(0xFFE2E8F0)
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("compare_overview_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4F46E5),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text("Overview", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                            }
+                            if (isOverviewDiff) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFEF3C7),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE047))
+                                ) {
+                                    Text(
+                                        "Different",
+                                        color = Color(0xFFB45309),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Divider(color = if (isOverviewDiff) Color(0xFFFEF08A) else Color(0xFFF1F5F9))
+
+                        activeProducts.forEachIndexed { idx, p ->
+                            if (idx > 0) Spacer(Modifier.height(8.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = p.name.uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF64748B),
+                                    letterSpacing = 0.5.sp
+                                )
+                                if (p.overview.isNotBlank()) {
+                                    FormattedSpecHtml(
+                                        content = p.overview,
+                                        fontSize = 13.sp,
+                                        lineHeight = 18.sp,
+                                        color = Color(0xFF1E293B)
+                                    )
+                                } else {
+                                    Text(
+                                        text = "No overview provided",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF94A3B8),
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Pictures Comparison Card (missing in compare.jpg)
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isPicturesDiff) Color(0xFFFEFCE8) else Color.White
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isPicturesDiff) Color(0xFFFDE047) else Color(0xFFE2E8F0)
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("compare_pictures_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoLibrary,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4F46E5),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text("Pictures", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                            }
+                            if (isPicturesDiff) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFEF3C7),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE047))
+                                ) {
+                                    Text(
+                                        "Different",
+                                        color = Color(0xFFB45309),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Divider(color = if (isPicturesDiff) Color(0xFFFEF08A) else Color(0xFFF1F5F9))
+
+                        activeProducts.forEachIndexed { idx, p ->
+                            if (idx > 0) Spacer(Modifier.height(10.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = p.name.uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF64748B),
+                                    letterSpacing = 0.5.sp
+                                )
+
+                                if (p.pictures.isEmpty()) {
+                                    Text(
+                                        text = "No pictures available",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF94A3B8),
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                    )
+                                } else {
+                                    p.pictures.forEach { pic ->
+                                        Card(
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(200.dp)
+                                            ) {
+                                                AsyncImage(
+                                                    model = resolveImageModel(
+                                                        LocalContext.current,
+                                                        pic.url,
+                                                        preferredName = pic.name
+                                                    ),
+                                                    contentDescription = pic.name,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Fit
+                                                )
+
+                                                // Top right "View full screen" button matching screenshot
+                                                Surface(
+                                                    onClick = { fullScreenPictureUrl = pic.url },
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = Color(0xD90F172A),
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .padding(8.dp)
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.OpenInFull,
+                                                            contentDescription = "View full screen",
+                                                            tint = Color.White,
+                                                            modifier = Modifier.size(13.dp)
+                                                        )
+                                                        Text(
+                                                            text = "View full screen",
+                                                            color = Color.White,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 11.sp
+                                                        )
+                                                    }
+                                                }
+
+                                                // Bottom right picture title label pill if available
+                                                if (pic.name.isNotBlank()) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = Color(0xF2FFFFFF),
+                                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                                        modifier = Modifier
+                                                            .align(Alignment.BottomEnd)
+                                                            .padding(8.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = pic.name,
+                                                            fontSize = 11.sp,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            color = Color(0xFF334155),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Brand Comparison Card (IMG_0002)
             item {
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -1187,19 +1424,23 @@ fun CompareScreen(
                                         }
                                     }
                                 } else if (parsed.rawText.isNotBlank()) {
+                                    val displayContent = s?.details?.ifBlank { null } ?: parsed.rawText
                                     Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.Top,
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        FormattedSpecHtml(
-                                            content = parsed.rawText,
-                                            fontSize = 14.sp,
-                                            lineHeight = 18.sp,
-                                            color = if (isBest) Color(0xFF0F172A) else Color(0xFF334155)
-                                        )
+                                        Box(modifier = Modifier.weight(1f, fill = false)) {
+                                            FormattedSpecHtml(
+                                                content = displayContent,
+                                                fontSize = 14.sp,
+                                                lineHeight = 19.sp,
+                                                color = if (isBest) Color(0xFF0F172A) else Color(0xFF334155)
+                                            )
+                                        }
                                         SpecUnitBadge(
                                             unit = s?.unit?.ifBlank { null } ?: detectedUnit.ifBlank { null },
-                                            details = parsed.rawText
+                                            details = displayContent
                                         )
                                     }
                                 } else {
@@ -1309,7 +1550,7 @@ fun RecordSlotCardView(
     reviewsCount: Int = 0,
     onSelectSlot: () -> Unit,
     onRemoveSlot: () -> Unit,
-    onEditProduct: (ProductItem) -> Unit = {},
+    onViewProduct: (ProductItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1343,7 +1584,7 @@ fun RecordSlotCardView(
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = Color.Transparent,
-                            modifier = Modifier.clickable { onEditProduct(slotProd) }
+                            modifier = Modifier.clickable { onViewProduct(slotProd) }
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1351,13 +1592,13 @@ fun RecordSlotCardView(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.Edit,
-                                    contentDescription = "Edit product",
+                                    Icons.Default.Visibility,
+                                    contentDescription = "View product",
                                     tint = Color(0xFF4F46E5),
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Text(
-                                    text = "Edit product",
+                                    text = "View product",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = Color(0xFF4F46E5)
@@ -1536,7 +1777,7 @@ fun parseNumericSpec(details: String?, specUnit: String?, specName: String, isNu
     if (details.isNullOrBlank()) {
         return ParsedNumericSpec(hasNumeric = false, value = 0f, unit = specUnit ?: "", displayUnit = specUnit ?: "", rawText = "")
     }
-    val clean = details.replace(Regex("<[^>]*>"), "").trim()
+    val clean = htmlToPlainText(details)
     if (clean.isBlank()) {
         return ParsedNumericSpec(hasNumeric = false, value = 0f, unit = specUnit ?: "", displayUnit = specUnit ?: "", rawText = "")
     }

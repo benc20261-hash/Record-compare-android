@@ -112,6 +112,8 @@ fun normalizeToEditableHtml(content: String): String {
                 }
                 if (trimmed.isNotBlank()) {
                     sb.append("<p>").append(trimmed).append("</p>")
+                } else {
+                    sb.append("<p><br></p>")
                 }
             }
         }
@@ -173,7 +175,7 @@ fun parseHtmlToRichText(content: String): Pair<String, List<FormatSpan>> {
                             if (plainBuilder.isNotEmpty() && !plainBuilder.endsWith("\n")) {
                                 plainBuilder.append('\n')
                             }
-                            plainBuilder.append("• ")
+                            plainBuilder.append("- ")
                         } else {
                             if (plainBuilder.isNotEmpty() && !plainBuilder.endsWith("\n")) {
                                 plainBuilder.append('\n')
