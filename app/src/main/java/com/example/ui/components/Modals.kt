@@ -49,6 +49,7 @@ import com.example.model.PictureItem
 import com.example.model.ProductItem
 import com.example.model.ReviewItem
 import com.example.model.SpecificationItem
+import com.example.model.copyPickedUriToPermanentStorage
 import com.example.model.resolveImageModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,16 +73,6 @@ fun ProductDetailModal(
     onSaveSpec: ((SpecificationItem) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    var deletingSpec by remember { mutableStateOf<SpecificationItem?>(null) }
-    var editingSpec by remember { mutableStateOf<SpecificationItem?>(null) }
-    var activeLightboxImages by remember { mutableStateOf<List<PictureItem>?>(null) }
-    var activeLightboxIndex by remember { mutableIntStateOf(0) }
-
-    val formattedCreatedDate = remember(product.createdTime) {
-        formatBeautifulDate(product.createdTime)
-    }
-
     BackHandler { onDismiss() }
 
     Dialog(
@@ -94,9 +85,64 @@ fun ProductDetailModal(
                 .testTag("product_detail_modal"),
             color = Color.White
         ) {
-            Scaffold(
-                contentWindowInsets = WindowInsets.systemBars,
-                topBar = {
+            ProductDetailPane(
+                product = product,
+                specifications = specifications,
+                reviews = reviews,
+                isCompared = isCompared,
+                onToggleCompare = onToggleCompare,
+                onEdit = onEdit,
+                onDelete = onDelete,
+                onAddSpec = onAddSpec,
+                onAddReview = onAddReview,
+                onReviewClick = onReviewClick,
+                onEditReview = onEditReview,
+                onEditSpec = onEditSpec,
+                onDeleteSpec = onDeleteSpec,
+                onSaveSpec = onSaveSpec,
+                onClose = onDismiss,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+@Composable
+fun ProductDetailPane(
+    product: ProductItem,
+    specifications: List<SpecificationItem>,
+    reviews: List<ReviewItem>,
+    isCompared: Boolean,
+    onToggleCompare: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onAddSpec: () -> Unit,
+    onAddReview: () -> Unit,
+    onReviewClick: (ReviewItem) -> Unit,
+    onEditReview: ((ReviewItem) -> Unit)? = null,
+    onEditSpec: ((SpecificationItem) -> Unit)? = null,
+    onDeleteSpec: ((SpecificationItem) -> Unit)? = null,
+    onSaveSpec: ((SpecificationItem) -> Unit)? = null,
+    onClose: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var deletingSpec by remember { mutableStateOf<SpecificationItem?>(null) }
+    var editingSpec by remember { mutableStateOf<SpecificationItem?>(null) }
+    var activeLightboxImages by remember { mutableStateOf<List<PictureItem>?>(null) }
+    var activeLightboxIndex by remember { mutableIntStateOf(0) }
+
+    val formattedCreatedDate = remember(product.createdTime) {
+        formatBeautifulDate(product.createdTime)
+    }
+
+    Surface(
+        modifier = modifier.testTag("product_detail_pane"),
+        color = Color.White
+    ) {
+        Scaffold(
+            contentWindowInsets = WindowInsets.systemBars,
+            topBar = {
                     Surface(
                         color = Color.White,
                         border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
@@ -115,17 +161,26 @@ fun ProductDetailModal(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier.weight(1f, fill = false)
                             ) {
-                                IconButton(
-                                    onClick = onDismiss,
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .testTag("close_detail_modal_btn")
-                                ) {
+                                if (onClose != null) {
+                                    IconButton(
+                                        onClick = onClose,
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .testTag("close_detail_modal_btn")
+                                    ) {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Back",
+                                            tint = Color(0xFF0F172A),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                } else {
                                     Icon(
-                                        Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = "Back",
-                                        tint = Color(0xFF0F172A),
-                                        modifier = Modifier.size(20.dp)
+                                        Icons.Default.Inventory2,
+                                        contentDescription = null,
+                                        tint = Color(0xFF4F46E5),
+                                        modifier = Modifier.size(22.dp).padding(start = 4.dp)
                                     )
                                 }
                                 Text(
@@ -232,19 +287,21 @@ fun ProductDetailModal(
                                     )
                                 }
 
-                                // 5. Close icon button
-                                IconButton(
-                                    onClick = onDismiss,
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .testTag("detail_close_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Close",
-                                        tint = Color(0xFF94A3B8),
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                if (onClose != null) {
+                                    // 5. Close icon button
+                                    IconButton(
+                                        onClick = onClose,
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .testTag("detail_close_btn")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Close",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -305,6 +362,43 @@ fun ProductDetailModal(
                                         tags = product.tags,
                                         modifier = Modifier.size(96.dp)
                                     )
+                                }
+                            }
+                        }
+
+                        if (product.pictures.size > 1) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                product.pictures.forEachIndexed { pIdx, pPic ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(60.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFFF8FAFC))
+                                            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                activeLightboxImages = product.pictures
+                                                activeLightboxIndex = pIdx
+                                            }
+                                            .padding(2.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        AsyncImage(
+                                            model = resolveImageModel(
+                                                LocalContext.current,
+                                                pPic.url,
+                                                preferredName = pPic.name
+                                            ),
+                                            contentDescription = pPic.name,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1005,9 +1099,6 @@ fun ProductDetailModal(
                         }
                     }
                 }
-            }
-        }
-    }
 
     if (showDeleteConfirm) {
         DeleteConfirmDialog(
@@ -1018,7 +1109,7 @@ fun ProductDetailModal(
             onConfirm = {
                 showDeleteConfirm = false
                 onDelete()
-                onDismiss()
+                onClose?.invoke()
             },
             onDismiss = { showDeleteConfirm = false }
         )
@@ -1656,11 +1747,7 @@ fun EditSpecModal(
     ) { uris ->
         if (uris.isNotEmpty()) {
             val newPics = uris.map { uri ->
-                PictureItem(
-                    id = "pic_" + java.util.UUID.randomUUID().toString().take(8),
-                    name = "Photo " + System.currentTimeMillis().toString().takeLast(4),
-                    url = uri.toString()
-                )
+                copyPickedUriToPermanentStorage(context, uri, prefix = "spec_pic")
             }
             pictures = pictures + newPics
         }

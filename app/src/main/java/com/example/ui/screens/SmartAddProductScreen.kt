@@ -83,6 +83,7 @@ fun SmartAddProductScreen(
     var slotPickerIndex by remember { mutableStateOf<Int?>(null) }
     var isTagDropdownOpen by remember { mutableStateOf(false) }
     var slotToRemoveIndex by remember { mutableStateOf<Int?>(null) }
+    val context = LocalContext.current
     var showResetSlotsConfirm by remember { mutableStateOf(false) }
     var specToDeleteInline by remember { mutableStateOf<Pair<String, String>?>(null) }
 
@@ -137,17 +138,13 @@ fun SmartAddProductScreen(
     var editingBrandProductId by remember { mutableStateOf<String?>(null) }
     var editingBrandText by remember { mutableStateOf("") }
 
-    // Photo picker for inline spec editor
+    // Photo picker for inline spec editor (Copies permanently to disk)
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let {
             inlineSpecPictures.add(
-                PictureItem(
-                    id = "pic_${UUID.randomUUID().toString().take(8)}",
-                    name = "Specification photo",
-                    url = it.toString()
-                )
+                com.example.model.copyPickedUriToPermanentStorage(context, it, prefix = "spec_pic")
             )
         }
     }

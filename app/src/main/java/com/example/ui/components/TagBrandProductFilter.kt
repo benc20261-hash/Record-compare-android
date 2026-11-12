@@ -119,19 +119,40 @@ fun TagBrandProductFilter(
         }
     }
 
-    // Filter items by active category and search text
+    // Filter items by active category and search text with cross-category matching
     val displayedItems = remember(sortedAll, activeCategory, effectiveQuery) {
-        val base = when (activeCategory) {
-            "tag" -> sortedAll.filter { it.type == FilterOptionType.TAG }
-            "brand" -> sortedAll.filter { it.type == FilterOptionType.BRAND }
-            "product" -> sortedAll.filter { it.type == FilterOptionType.PRODUCT }
-            else -> sortedAll // "all" searches through all tags, brands, and products
-        }
         val q = effectiveQuery.trim().lowercase()
         if (q.isNotEmpty()) {
-            base.filter { it.label.lowercase().contains(q) }
+            if (activeCategory == "all") {
+                sortedAll.filter { it.label.lowercase().contains(q) }
+            } else {
+                val currentMatches = sortedAll.filter { item ->
+                    val matchesType = when (activeCategory) {
+                        "tag" -> item.type == FilterOptionType.TAG
+                        "brand" -> item.type == FilterOptionType.BRAND
+                        "product" -> item.type == FilterOptionType.PRODUCT
+                        else -> true
+                    }
+                    matchesType && item.label.lowercase().contains(q)
+                }
+                val otherMatches = sortedAll.filter { item ->
+                    val isOtherType = when (activeCategory) {
+                        "tag" -> item.type != FilterOptionType.TAG
+                        "brand" -> item.type != FilterOptionType.BRAND
+                        "product" -> item.type != FilterOptionType.PRODUCT
+                        else -> false
+                    }
+                    isOtherType && item.label.lowercase().contains(q)
+                }
+                currentMatches + otherMatches
+            }
         } else {
-            base
+            when (activeCategory) {
+                "tag" -> sortedAll.filter { it.type == FilterOptionType.TAG }
+                "brand" -> sortedAll.filter { it.type == FilterOptionType.BRAND }
+                "product" -> sortedAll.filter { it.type == FilterOptionType.PRODUCT }
+                else -> sortedAll
+            }
         }
     }
 

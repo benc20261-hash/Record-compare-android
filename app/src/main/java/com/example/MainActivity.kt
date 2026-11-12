@@ -27,6 +27,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import kotlin.math.roundToInt
 import com.example.model.ProductItem
 import com.example.model.ReviewItem
 import com.example.model.SpecificationItem
@@ -131,30 +135,45 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
 
     val context = androidx.compose.ui.platform.LocalContext.current
     var showSyncModal by remember { mutableStateOf(false) }
+    var appFontScale by remember { mutableFloatStateOf(1.0f) }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val isDesktopMode = maxWidth >= 720.dp
+    val currentDensity = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(
+            density = currentDensity.density,
+            fontScale = currentDensity.fontScale * appFontScale
+        )
+    ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isDesktopMode = maxWidth >= 720.dp
 
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = com.example.ui.theme.AppColors.CanvasBackground,
-            topBar = {
+            Row(modifier = Modifier.fillMaxSize()) {
                 if (isDesktopMode) {
-                    DesktopNavbar(
+                    AppNavigationRail(
                         activeTab = activeTab,
                         onTabSelected = { viewModel.setActiveTab(it) },
                         productCount = products.size,
                         compareCount = comparedProductIds.size,
                         reviewCount = reviews.size,
-                        onAddProductClick = { viewModel.openAddProductDialog(true) },
+                        appFontScale = appFontScale,
+                        onFontScaleChange = { appFontScale = it },
                         onSyncClick = { showSyncModal = true }
                     )
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .background(Color.White)
-                            .statusBarsPadding()
-                    ) {
+                    VerticalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+                }
+
+                Scaffold(
+                    modifier = Modifier
+                        .then(if (isDesktopMode) Modifier.weight(1f) else Modifier.fillMaxWidth())
+                        .fillMaxHeight(),
+                    containerColor = com.example.ui.theme.AppColors.CanvasBackground,
+                    topBar = {
+                        if (!isDesktopMode) {
+                            Column(
+                                modifier = Modifier
+                                    .background(Color.White)
+                                    .statusBarsPadding()
+                            ) {
                         // Top App Bar Header with Logo & Live Badge (Catalog module.PNG / Compare module.PNG)
                 Row(
                     modifier = Modifier
@@ -198,6 +217,59 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
                                 color = Color(0xFF3B82F6),
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                             )
+                        }
+
+                        // Font size controls right beside "Live" (A- / % / A+)
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFF1F5F9),
+                            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        val next = ((appFontScale - 0.1f) * 10).roundToInt() / 10f
+                                        appFontScale = next.coerceAtLeast(0.7f)
+                                    },
+                                    modifier = Modifier.size(24.dp).testTag("btn_font_decrease"),
+                                    enabled = appFontScale > 0.75f
+                                ) {
+                                    Text(
+                                        "A-",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (appFontScale > 0.75f) Color(0xFF334155) else Color(0xFF94A3B8)
+                                    )
+                                }
+                                Text(
+                                    text = "${(appFontScale * 100).roundToInt()}%",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E293B),
+                                    modifier = Modifier
+                                        .clickable { appFontScale = 1.0f }
+                                        .padding(horizontal = 2.dp)
+                                )
+                                IconButton(
+                                    onClick = {
+                                        val next = ((appFontScale + 0.1f) * 10).roundToInt() / 10f
+                                        appFontScale = next.coerceAtMost(1.6f)
+                                    },
+                                    modifier = Modifier.size(24.dp).testTag("btn_font_increase"),
+                                    enabled = appFontScale < 1.55f
+                                ) {
+                                    Text(
+                                        "A+",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (appFontScale < 1.55f) Color(0xFF334155) else Color(0xFF94A3B8)
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -520,7 +592,8 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
 }
 
     // Modals
-    selectedProductForDetail?.let { prod ->
+    if (!isDesktopMode || activeTab != AppNavTab.CATALOG) {
+        selectedProductForDetail?.let { prod ->
         val prodSpecs = specifications.filter { it.productId == prod.id || it.productTitle == prod.name }
         val prodReviews = reviews.filter { prod.id in it.productIds || prod.name in it.productTitles }
         val isCompared = prod.id in comparedProductIds
@@ -556,6 +629,7 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
             onSaveSpec = { spec -> viewModel.saveSpecification(spec) },
             onDismiss = { viewModel.showProductDetail(null) }
         )
+    }
     }
 
     selectedProductForEdit?.let { prod ->
@@ -690,6 +764,8 @@ fun ProductCompareApp(viewModel: ProductCompareViewModel) {
             }
         }
     }
+    }
+}
 }
 
 @Composable

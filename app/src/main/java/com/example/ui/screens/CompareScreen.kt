@@ -490,6 +490,8 @@ fun CompareScreen(
                         val slotProdId = recordSlots[index]
                         val slotProd = slotProdId?.let { id -> allProducts.find { it.id == id } }
                         val revCount = reviews.count { slotProd?.id in it.productIds || (slotProd != null && it.productTitles.any { t -> t.equals(slotProd.name, ignoreCase = true) }) }
+                        val canMoveUp = index > 0 && slotProd != null
+                        val canMoveDown = index < recordSlots.size - 1 && slotProd != null
                         RecordSlotCardView(
                             index = index,
                             slotProd = slotProd,
@@ -498,6 +500,26 @@ fun CompareScreen(
                             onSelectSlot = { slotIndexToPick = index },
                             onRemoveSlot = { slotToRemoveIndex = index },
                             onViewProduct = onProductClick,
+                            onMoveUp = if (canMoveUp) {
+                                {
+                                    val updated = recordSlots.toMutableList()
+                                    val temp = updated[index]
+                                    updated[index] = updated[index - 1]
+                                    updated[index - 1] = temp
+                                    recordSlots = updated
+                                    onSetComparedIds(updated.filterNotNull())
+                                }
+                            } else null,
+                            onMoveDown = if (canMoveDown) {
+                                {
+                                    val updated = recordSlots.toMutableList()
+                                    val temp = updated[index]
+                                    updated[index] = updated[index + 1]
+                                    updated[index + 1] = temp
+                                    recordSlots = updated
+                                    onSetComparedIds(updated.filterNotNull())
+                                }
+                            } else null,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -508,6 +530,8 @@ fun CompareScreen(
                 val slotProdId = recordSlots[index]
                 val slotProd = slotProdId?.let { id -> allProducts.find { it.id == id } }
                 val revCount = reviews.count { slotProd?.id in it.productIds || (slotProd != null && it.productTitles.any { t -> t.equals(slotProd.name, ignoreCase = true) }) }
+                val canMoveUp = index > 0 && slotProd != null
+                val canMoveDown = index < recordSlots.size - 1 && slotProd != null
                 RecordSlotCardView(
                     index = index,
                     slotProd = slotProd,
@@ -515,7 +539,27 @@ fun CompareScreen(
                     reviewsCount = revCount,
                     onSelectSlot = { slotIndexToPick = index },
                     onRemoveSlot = { slotToRemoveIndex = index },
-                    onViewProduct = onProductClick
+                    onViewProduct = onProductClick,
+                    onMoveUp = if (canMoveUp) {
+                        {
+                            val updated = recordSlots.toMutableList()
+                            val temp = updated[index]
+                            updated[index] = updated[index - 1]
+                            updated[index - 1] = temp
+                            recordSlots = updated
+                            onSetComparedIds(updated.filterNotNull())
+                        }
+                    } else null,
+                    onMoveDown = if (canMoveDown) {
+                        {
+                            val updated = recordSlots.toMutableList()
+                            val temp = updated[index]
+                            updated[index] = updated[index + 1]
+                            updated[index + 1] = temp
+                            recordSlots = updated
+                            onSetComparedIds(updated.filterNotNull())
+                        }
+                    } else null
                 )
             }
         }
@@ -536,6 +580,164 @@ fun CompareScreen(
             }
             val totalDifferCount = (if (isOverviewDiff) 1 else 0) + (if (isPicturesDiff) 1 else 0) + (if (isBrandDiff) 1 else 0) + (if (isTagsDiff) 1 else 0) + diffSpecsCount
             val totalFieldsCount = 4 + distinctSpecNames.size
+
+            // Selected Products Reorder Card (Matching SmartAddProductScreen / screenshot 4)
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Selected products (${activeProducts.size})",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF0F172A)
+                            )
+                            Text(
+                                "Reorder comparison",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+
+                        activeProducts.forEachIndexed { pIdx, product ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    // Thumbnail
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFF1F5F9),
+                                        modifier = Modifier.size(38.dp)
+                                    ) {
+                                        DeviceGraphicPlaceholder(
+                                            title = product.name,
+                                            brand = product.brand,
+                                            tags = product.tags,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "${pIdx + 1}. ${product.name}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = Color(0xFF0F172A),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            product.brand.ifBlank { "Generic" },
+                                            fontSize = 12.sp,
+                                            color = Color(0xFF64748B),
+                                            maxLines = 1
+                                        )
+                                    }
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Move down button
+                                        IconButton(
+                                            onClick = {
+                                                val activeList = recordSlots.filterNotNull().toMutableList()
+                                                if (pIdx < activeList.size - 1) {
+                                                    val temp = activeList[pIdx]
+                                                    activeList[pIdx] = activeList[pIdx + 1]
+                                                    activeList[pIdx + 1] = temp
+                                                    val updated = activeList.toMutableList<String?>()
+                                                    while (updated.size < recordSlots.size) updated.add(null)
+                                                    recordSlots = updated
+                                                    onSetComparedIds(activeList)
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp).testTag("compare_reorder_down_$pIdx"),
+                                            enabled = pIdx < activeProducts.size - 1
+                                        ) {
+                                            Icon(
+                                                Icons.Default.ArrowDownward,
+                                                contentDescription = "Down",
+                                                tint = if (pIdx < activeProducts.size - 1) Color(0xFF4F46E5) else Color(0xFFCBD5E1),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
+                                        // Move up button
+                                        IconButton(
+                                            onClick = {
+                                                val activeList = recordSlots.filterNotNull().toMutableList()
+                                                if (pIdx > 0 && pIdx < activeList.size) {
+                                                    val temp = activeList[pIdx]
+                                                    activeList[pIdx] = activeList[pIdx - 1]
+                                                    activeList[pIdx - 1] = temp
+                                                    val updated = activeList.toMutableList<String?>()
+                                                    while (updated.size < recordSlots.size) updated.add(null)
+                                                    recordSlots = updated
+                                                    onSetComparedIds(activeList)
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp).testTag("compare_reorder_up_$pIdx"),
+                                            enabled = pIdx > 0
+                                        ) {
+                                            Icon(
+                                                Icons.Default.ArrowUpward,
+                                                contentDescription = "Up",
+                                                tint = if (pIdx > 0) Color(0xFF4F46E5) else Color(0xFFCBD5E1),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
+                                        // View Product button
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = Color(0xFFEEF2FF),
+                                            modifier = Modifier
+                                                .height(28.dp)
+                                                .clickable { onProductClick(product) }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Visibility,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF4F46E5),
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Text("View", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4F46E5))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             item {
                 Spacer(Modifier.height(8.dp))
@@ -1551,6 +1753,8 @@ fun RecordSlotCardView(
     onSelectSlot: () -> Unit,
     onRemoveSlot: () -> Unit,
     onViewProduct: (ProductItem) -> Unit = {},
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1578,9 +1782,35 @@ fun RecordSlotCardView(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (slotProd != null) {
+                        if (onMoveUp != null) {
+                            IconButton(
+                                onClick = onMoveUp,
+                                modifier = Modifier.size(26.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ArrowUpward,
+                                    contentDescription = "Move slot up",
+                                    tint = Color(0xFF4F46E5),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                        if (onMoveDown != null) {
+                            IconButton(
+                                onClick = onMoveDown,
+                                modifier = Modifier.size(26.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ArrowDownward,
+                                    contentDescription = "Move slot down",
+                                    tint = Color(0xFF4F46E5),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = Color.Transparent,

@@ -216,7 +216,26 @@ fun resolveImageModel(context: android.content.Context, url: String, preferredNa
                 fuzzyMatch
             } else if (cleanUrl.startsWith("content://")) {
                 try {
-                    android.net.Uri.parse(cleanUrl)
+                    val uri = android.net.Uri.parse(cleanUrl)
+                    val hash = Math.abs(cleanUrl.hashCode()).toString()
+                    val cachedFile = java.io.File(picturesDir, "cached_$hash.jpg")
+                    if (cachedFile.exists() && cachedFile.length() > 0) {
+                        cachedFile
+                    } else {
+                        try {
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                if (!picturesDir.exists()) picturesDir.mkdirs()
+                                cachedFile.outputStream().use { out -> input.copyTo(out) }
+                            }
+                            if (cachedFile.exists() && cachedFile.length() > 0) {
+                                cachedFile
+                            } else {
+                                uri
+                            }
+                        } catch (_: Exception) {
+                            uri
+                        }
+                    }
                 } catch (_: Exception) {
                     if (cleanUrl.isNotBlank() && !cleanUrl.startsWith("blob:")) cleanUrl else (cleanPreferred ?: "")
                 }
@@ -233,3 +252,35 @@ fun resolveImageModel(context: android.content.Context, url: String, preferredNa
     imageResolutionCache[cacheKey] = resolved
     return resolved
 }
+
+fun copyPickedUriToPermanentStorage(
+    context: android.content.Context,
+    uri: android.net.Uri,
+    prefix: String = "pic"
+): PictureItem {
+    return try {
+        val picturesDir = java.io.File(context.filesDir, "pictures")
+        if (!picturesDir.exists()) picturesDir.mkdirs()
+        val filename = "${prefix}_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(6)}.jpg"
+        val destFile = java.io.File(picturesDir, filename)
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            destFile.outputStream().use { out -> input.copyTo(out) }
+        }
+        val reviewImagesDir = java.io.File(context.filesDir, "review_images")
+        if (!reviewImagesDir.exists()) reviewImagesDir.mkdirs()
+        try { destFile.copyTo(java.io.File(reviewImagesDir, filename), overwrite = true) } catch (_: Exception) {}
+
+        PictureItem(
+            id = "${prefix}_${System.currentTimeMillis()}",
+            name = filename,
+            url = "file://${destFile.absolutePath}"
+        )
+    } catch (_: Exception) {
+        PictureItem(
+            id = "${prefix}_${System.currentTimeMillis()}",
+            name = "Photo ${System.currentTimeMillis().toString().takeLast(4)}",
+            url = uri.toString()
+        )
+    }
+}
+

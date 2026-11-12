@@ -42,9 +42,11 @@ import coil.compose.AsyncImage
 import com.example.model.PictureItem
 import com.example.model.ProductItem
 import com.example.model.SpecificationItem
+import com.example.model.copyPickedUriToPermanentStorage
 import com.example.model.resolveImageModel
 import com.example.ui.components.DeleteConfirmDialog
 import com.example.ui.components.FormattedSpecHtml
+import com.example.ui.components.FullScreenPhotoLightbox
 import com.example.ui.components.HtmlWysiwygEditor
 import com.example.ui.components.SpecUnitBadge
 import com.example.ui.components.htmlToPlainText
@@ -140,37 +142,29 @@ fun ProductWorkspaceScreen(
     var showDeleteProductConfirm by remember { mutableStateOf(false) }
     var specToDeleteIndex by remember { mutableStateOf<Int?>(null) }
     var pictureToRemove by remember { mutableStateOf<PictureItem?>(null) }
+    var activeLightboxImages by remember { mutableStateOf<List<PictureItem>?>(null) }
+    var activeLightboxIndex by remember { mutableIntStateOf(0) }
 
-    // Android Photo Picker for Product Pictures
+    // Android Photo Picker for Product Pictures (Copies permanently to disk)
     val productPhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
-        uris.forEachIndexed { i, uri ->
-            productPictures.add(
-                PictureItem(
-                    id = "pic_${System.currentTimeMillis()}_$i",
-                    name = "Photo ${productPictures.size + 1}",
-                    url = uri.toString()
-                )
-            )
+        uris.forEach { uri ->
+            val permanentPic = copyPickedUriToPermanentStorage(context, uri, prefix = "prod_pic")
+            productPictures.add(permanentPic)
         }
     }
 
-    // Android Photo Picker for Spec Pictures
+    // Android Photo Picker for Spec Pictures (Copies permanently to disk)
     val specPhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
         if (selectedSpecIndex in specsList.indices) {
             val currentSpec = specsList[selectedSpecIndex]
             val updatedPics = currentSpec.pictures.toMutableList()
-            uris.forEachIndexed { i, uri ->
-                updatedPics.add(
-                    PictureItem(
-                        id = "specpic_${System.currentTimeMillis()}_$i",
-                        name = "Spec Photo ${updatedPics.size + 1}",
-                        url = uri.toString()
-                    )
-                )
+            uris.forEach { uri ->
+                val permanentPic = copyPickedUriToPermanentStorage(context, uri, prefix = "spec_pic")
+                updatedPics.add(permanentPic)
             }
             specsList[selectedSpecIndex] = currentSpec.copy(pictures = updatedPics)
         }
@@ -668,10 +662,15 @@ fun ProductWorkspaceScreen(
                                         }
                                     }
 
-                                    // Filtered brands horizontal chips
-                                    val filteredBrands = remember(allBrandsList, brandSearchQuery) {
-                                        if (brandSearchQuery.isBlank()) allBrandsList
-                                        else allBrandsList.filter { it.contains(brandSearchQuery.trim(), ignoreCase = true) }
+                                    // Filtered brands horizontal chips with cross-category matching
+                                    val filteredBrands = remember(allBrandsList, allTagsList, brandSearchQuery) {
+                                        val q = brandSearchQuery.trim()
+                                        if (q.isBlank()) allBrandsList
+                                        else {
+                                            val bMatches = allBrandsList.filter { it.contains(q, ignoreCase = true) }
+                                            val tMatches = allTagsList.filter { it.contains(q, ignoreCase = true) && !allBrandsList.contains(it) }
+                                            bMatches + tMatches
+                                        }
                                     }
 
                                     if (filteredBrands.isNotEmpty()) {
@@ -921,10 +920,15 @@ fun ProductWorkspaceScreen(
                                         }
                                     }
 
-                                    // Filtered tags horizontal chips
-                                    val filteredTags = remember(allTagsList, tagSearchQuery) {
-                                        if (tagSearchQuery.isBlank()) allTagsList
-                                        else allTagsList.filter { it.contains(tagSearchQuery.trim(), ignoreCase = true) }
+                                    // Filtered tags horizontal chips with cross-category matching
+                                    val filteredTags = remember(allTagsList, allBrandsList, tagSearchQuery) {
+                                        val q = tagSearchQuery.trim()
+                                        if (q.isBlank()) allTagsList
+                                        else {
+                                            val tMatches = allTagsList.filter { it.contains(q, ignoreCase = true) }
+                                            val bMatches = allBrandsList.filter { it.contains(q, ignoreCase = true) && !allTagsList.contains(it) }
+                                            tMatches + bMatches
+                                        }
                                     }
 
                                     if (filteredTags.isNotEmpty()) {
@@ -1064,13 +1068,17 @@ fun ProductWorkspaceScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.padding(top = 6.dp)
                             ) {
-                                items(productPictures) { pic ->
+                                itemsIndexed(productPictures) { pIdx, pic ->
                                     Box(
                                         modifier = Modifier
                                             .size(76.dp)
                                             .clip(RoundedCornerShape(10.dp))
                                             .background(Color(0xFFF8FAFC))
                                             .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                activeLightboxImages = productPictures.toList()
+                                                activeLightboxIndex = pIdx
+                                            }
                                             .padding(3.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -1528,13 +1536,17 @@ fun ProductWorkspaceScreen(
 
                                     if (spec.pictures.isNotEmpty()) {
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            items(spec.pictures) { spPic ->
+                                            itemsIndexed(spec.pictures) { spIdx, spPic ->
                                                 Box(
                                                     modifier = Modifier
                                                         .size(60.dp)
                                                         .clip(RoundedCornerShape(8.dp))
                                                         .background(Color(0xFFF8FAFC))
                                                         .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+                                                        .clickable {
+                                                            activeLightboxImages = spec.pictures
+                                                            activeLightboxIndex = spIdx
+                                                        }
                                                         .padding(2.dp),
                                                     contentAlignment = Alignment.Center
                                                 ) {
@@ -1651,6 +1663,15 @@ fun ProductWorkspaceScreen(
                 pictureToRemove = null
             },
             onDismiss = { pictureToRemove = null }
+        )
+    }
+
+    // Full Screen Zoom Lightbox for pictures
+    if (activeLightboxImages != null) {
+        FullScreenPhotoLightbox(
+            images = activeLightboxImages!!,
+            initialIndex = activeLightboxIndex,
+            onDismiss = { activeLightboxImages = null }
         )
     }
 }
